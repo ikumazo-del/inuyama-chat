@@ -520,9 +520,17 @@ function renderStaff() {
     ds.innerHTML = users.map(u=>{
       const me = u.userId===myId;
       const chs = channels.filter(c=>c.members[u.userId]).map(c=>esc(c.name)).join(' · ');
-      return `<div class="row">
-        <div class="row-ic ${me?'me':''}">${me?'🙋':'👤'}</div>
-        <div class="row-bd"><div class="row-n">${esc(u.name)}${me?' (自分)':''}</div><div class="row-s">${chs||'未参加'}</div></div>
+      if (me) {
+        return `<div class="row">
+          <div class="row-ic me">🙋</div>
+          <div class="row-bd"><div class="row-n">${esc(u.name)} (自分)</div><div class="row-s">${chs||'未参加'}</div></div>
+        </div>`;
+      }
+      const safeName = (u.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      return `<div class="row tap" onclick="openDM('${u.userId}','${safeName}')">
+        <div class="row-ic">👤</div>
+        <div class="row-bd"><div class="row-n">${esc(u.name)}</div><div class="row-s">${chs||'未参加'} · タップしてDM</div></div>
+        <div class="row-rt"><span class="chev">›</span></div>
       </div>`;
     }).join('');
   }
