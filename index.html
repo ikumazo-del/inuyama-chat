@@ -434,6 +434,7 @@ function init() {
 
 // ── SETUP ────────────────────────────────
 function doSetup() {
+  initAudio();
   const n = el('nameInput').value.trim();
   if (!n) { toast('名前を入力してください'); return; }
   if (!myId) {
@@ -666,6 +667,7 @@ async function createCh() {
 
 // ── DM ──────────────────────────────────────
 function openDM(otherId, otherName) {
+  initAudio();
   if (!otherId || otherId === myId) return;
   const dmId = [myId, otherId].sort().join('_');
   curDM = { dmId, otherId, otherName };
@@ -732,6 +734,7 @@ function loadDMMsgs(dmId) {
 
 // ── CHAT ─────────────────────────────────
 function openChat(id) {
+  initAudio();
   const c = channels.find(x=>x.id===id);
   if (!c) return;
   curCh = {id, name:c.name};
@@ -820,6 +823,7 @@ function putMsg(area,data,id) {
 }
 
 async function sendMsg() {
+  initAudio();
   const inp  = el('chatInput');
   const text = inp.value.trim();
   if (!text) return;
@@ -933,16 +937,30 @@ function markReadMsg(docRef) {
   docRef.set({ readBy: { [myId]: true } }, { merge: true }).catch(() => {});
 }
 
-function beep()      {
+function initAudio() {
+  // iOSはユーザー操作時にAudioContextを初期化する必要がある
+  if (actx) return;
   try {
-    if (!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
-    const o=actx.createOscillator(),g=actx.createGain();
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    // suspendされていたら再開
+    if (actx.state === 'suspended') actx.resume();
+  } catch(e) {}
+}
+
+function beep() {
+  try {
+    if (!actx) return; // まだ初期化されていなければスキップ
+    if (actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator();
+    const g = actx.createGain();
     o.connect(g); g.connect(actx.destination);
-    o.frequency.setValueAtTime(660,actx.currentTime);
-    o.frequency.setValueAtTime(880,actx.currentTime+0.08);
-    g.gain.setValueAtTime(0.2,actx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.3);
-    o.start(); o.stop(actx.currentTime+0.3);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(660, actx.currentTime);
+    o.frequency.setValueAtTime(880, actx.currentTime + 0.08);
+    g.gain.setValueAtTime(0.3, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.35);
+    o.start(actx.currentTime);
+    o.stop(actx.currentTime + 0.35);
   } catch(e) {}
 }
 
@@ -953,6 +971,18 @@ el('deleteModal').addEventListener('click',e=>{ if(e.target===el('deleteModal'))
 el('chInput'  ).addEventListener('keydown',e=>{ if(e.key==='Enter') createCh(); });
 el('createModal' ).addEventListener('click',e=>{ if(e.target===el('createModal'))  closeCreate(); });
 el('membersSheet').addEventListener('click',e=>{ if(e.target===el('membersSheet')) closeSheet(); });
+
+// 最初のタップでAudioContextを初期化（iOS対応）
+document.addEventListener('touchstart', function _init() {
+  initAudio();
+  document.removeEventListener('touchstart', _init);
+}, { once: true, passive: true });
+
+// マウス環境用（Mac/PC）
+document.addEventListener('click', function _initClick() {
+  initAudio();
+  document.removeEventListener('click', _initClick);
+}, { once: true });
 
 init();
 </script>
