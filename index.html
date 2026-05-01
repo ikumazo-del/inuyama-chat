@@ -169,7 +169,7 @@
     }
     .bw.me    .b { background: var(--pri); color: white; border-bottom-right-radius: 3px; }
     .bw.other .b { background: white; box-shadow: 0 1px 2px rgba(0,0,0,.08); border-bottom-left-radius: 3px; }
-    .b-t  { font-size: 10px; color: var(--sub); padding: 0 4px; display:flex; gap:4px; align-items:center; }
+    .b-t  { font-size: 10px; color: var(--sub); padding: 0 4px; display:flex; gap:4px; align-items:center; justify-content:flex-end; }
     .read-label { font-size: 10px; color: #7B9CCF; font-weight:600; }
     .unread-dot { width:9px; height:9px; border-radius:50%; background:#EF4444; flex-shrink:0; }
     .sys  { text-align: center; font-size: 11px; color: var(--sub); padding: 6px 0; }
@@ -382,6 +382,7 @@ async function deleteAccount() {
     // ローカルデータ削除 → 初期画面へ
     localStorage.removeItem('uid');
     localStorage.removeItem('uname');
+    localStorage.removeItem('lastRead');
     location.reload();
   } catch(e) { toast('⚠️ 削除に失敗しました'); }
 }
@@ -470,6 +471,7 @@ function renderMy() {
 
   // チャンネルセクション
   if (mine.length) {
+    html += '<div class="sec" style="background:var(--bg);padding:7px 14px 5px;font-size:11px;font-weight:700;color:var(--sub);">参加中のチャンネル</div>';
     html += mine.map(c=>{
       const cnt = Object.keys(c.members).length;
       const pre = c.lastMsg ? esc(c.lastMsg).slice(0,24)+(c.lastMsg.length>24?'…':'') : '（メッセージなし）';
@@ -636,6 +638,15 @@ function openDM(otherId, otherName) {
   el('vChat').classList.add('on');
   el('bnav').classList.add('hidden');
   markRead(dmId);
+  db.collection('dms').doc(dmId).collection('messages')
+    .orderBy('timestamp','desc').limit(50).get()
+    .then(snap => {
+      const batch = db.batch();
+      snap.docs.filter(d=>d.data().userId!==myId).forEach(d=>{
+        batch.set(d.ref,{readBy:{[myId]:true}},{merge:true});
+      });
+      batch.commit().catch(()=>{});
+    });
   loadDMMsgs(dmId);
 }
 
@@ -656,8 +667,21 @@ function loadDMMsgs(dmId) {
           if (ch.type==='added') {
             area.querySelector('.sys')?.remove();
             putMsg(area,ch.doc.data(),ch.doc.id);
-            if (ch.doc.data().userId!==myId) beep();
+            if (ch.doc.data().userId!==myId) {
+              beep();
+              markReadMsg(ch.doc.ref);
+            }
             scrollEnd();
+          }
+          if (ch.type==='modified') {
+            const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
+            if (old2) {
+              const next = old2.nextSibling;
+              old2.remove();
+              const tmp = document.createElement('div');
+              putMsg(tmp, ch.doc.data(), ch.doc.id);
+              area.insertBefore(tmp.firstElementChild, next);
+            }
           }
         });
       }
@@ -685,6 +709,16 @@ function openChat(id) {
   el('vChat').classList.add('on');
   el('bnav').classList.add('hidden');
   markRead(id);
+  // 既存メッセージに既読を書き込む
+  db.collection('channels').doc(id).collection('messages')
+    .orderBy('timestamp','desc').limit(50).get()
+    .then(snap => {
+      const batch = db.batch();
+      snap.docs.filter(d=>d.data().userId!==myId).forEach(d=>{
+        batch.set(d.ref,{readBy:{[myId]:true}},{merge:true});
+      });
+      batch.commit().catch(()=>{});
+    });
   loadMsgs(id);
 }
 
@@ -714,8 +748,16 @@ function loadMsgs(id) {
           if (ch.type==='added') {
             area.querySelector('.sys')?.remove();
             putMsg(area,ch.doc.data(),ch.doc.id);
-            if (ch.doc.data().userId!==myId) beep();
+            if (ch.doc.data().userId!==myId) {
+              beep();
+              markReadMsg(ch.doc.ref); // 既読をFirestoreに書き込む
+            }
             scrollEnd();
+          }
+          if (ch.type==='modified') {
+            // 既読数更新：バブルを差し替え
+            const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
+            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id); area.insertBefore(tmp.firstElementChild,next); }
           }
         });
       }
@@ -725,13 +767,13 @@ function loadMsgs(id) {
 function putMsg(area,data,id) {
   const me = data.userId===myId;
   const t  = data.timestamp?.toDate ? fmtT(data.timestamp.toDate()) : '';
-  const readers = data.readBy ? Object.keys(data.readBy).length - 1 : 0; // 自分を除く
+  const readers = data.readBy ? Object.keys(data.readBy).length : 0;
   const readLabel = me && readers > 0 ? `<span class="read-label">既読 ${readers}</span>` : '';
   const d  = document.createElement('div');
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
     <div class="b">${esc(data.text)}</div>
-    <div class="b-t">${readLabel}${t}</div>`;
+    <div class="b-t">${t}${readLabel}</div>`;
   area.appendChild(d);
 }
 
@@ -820,6 +862,35 @@ function fmtT(d)     { const now=new Date(),t=d.toLocaleTimeString('ja-JP',{hour
                         return d.toDateString()===now.toDateString()?t:`${d.getMonth()+1}/${d.getDate()} ${t}`; }
 function esc(s)      { const d=document.createElement('div'); d.appendChild(document.createTextNode(String(s||''))); return d.innerHTML; }
 function toast(msg)  { const t=el('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2800); }
+// ── 通知許可 ──────────────────────────────
+async function requestNotify() {
+  if (!('Notification' in window)) { toast('この端末は通知非対応です'); return; }
+  if (Notification.permission === 'granted') { toast('✅ 通知はすでに有効です'); return; }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm === 'granted') {
+      if (messaging) {
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+        console.log('FCM token:', token);
+      }
+      toast('🔔 通知が有効になりました');
+    } else {
+      toast('通知が許可されませんでした');
+    }
+  } catch(e) { console.error(e); toast('通知設定でエラーが発生しました'); }
+}
+
+// ── 既読管理 ──────────────────────────────
+function markRead(id) {
+  lastRead[id] = Date.now();
+  localStorage.setItem('lastRead', JSON.stringify(lastRead));
+  renderMy();
+}
+
+function markReadMsg(docRef) {
+  docRef.set({ readBy: { [myId]: true } }, { merge: true }).catch(() => {});
+}
+
 function beep()      {
   try {
     if (!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
