@@ -285,6 +285,9 @@
       <div class="lst" id="lStaff" style="flex:0 1 auto;max-height:50%;"></div>
       <div class="sec">チャンネル一覧</div>
       <div class="lst" id="lChList"></div>
+      <div style="padding:12px 12px calc(12px + var(--sb));flex-shrink:0;">
+        <button class="btn" onclick="deleteAccount()" style="background:#FEE2E2;color:#EF4444;font-size:13px;padding:10px;">⚠️ アカウントを削除する</button>
+      </div>
     </div>
 
     <!-- チャット -->
@@ -337,6 +340,39 @@ let unsubCh  = null;
 let unsubMsg = null;
 let unsubUs  = null;
 let actx     = null;
+
+async function deleteAccount() {
+  if (!confirm('アカウントを削除しますか？\n全チャンネルから退会し、スタッフ一覧からも消えます。')) return;
+  try {
+    const batch = db.batch();
+    // 参加中の全チャンネルから退会
+    for (const c of channels.filter(x => x.members[myId])) {
+      const chRef = db.collection('channels').doc(c.id);
+      batch.update(chRef, { [`members.${myId}`]: FV.delete() });
+    }
+    // ユーザードキュメント削除
+    batch.delete(db.collection('users').doc(myId));
+    await batch.commit();
+
+    // 空になったチャンネルを削除
+    for (const c of channels.filter(x => x.members[myId])) {
+      const remaining = Object.keys(c.members).filter(k => k !== myId).length;
+      if (remaining === 0) {
+        const chRef = db.collection('channels').doc(c.id);
+        const msgs = await chRef.collection('messages').get();
+        const b2 = db.batch();
+        msgs.docs.forEach(d => b2.delete(d.ref));
+        b2.delete(chRef);
+        await b2.commit();
+      }
+    }
+
+    // ローカルデータ削除 → 初期画面へ
+    localStorage.removeItem('uid');
+    localStorage.removeItem('uname');
+    location.reload();
+  } catch(e) { toast('⚠️ 削除に失敗しました'); }
+}
 
 const el   = id => document.getElementById(id);
 const show = id => el(id).classList.remove('hidden');
