@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="院内連絡">
+  <meta name="theme-color" content="#1565C0">
+  <title>総合犬山中央病院 院内連絡</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box; margin: 0; padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    :root {
+      --pri:    #1565C0;
+      --pri-lt: #E3F2FD;
+      --bg:     #F0F4F8;
+      --surf:   #FFFFFF;
+      --bdr:    #E2E8F0;
+      --txt:    #111827;
+      --sub:    #6B7280;
+      --dng:    #EF4444;
+      --st: env(safe-area-inset-top,    0px);
+      --sb: env(safe-area-inset-bottom, 0px);
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg);
+      color: var(--txt); font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; }
+
+    /* ── OVERLAYS ───────────────────────── */
+    .ov {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 600; display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .card {
+      background: white; border-radius: 20px; padding: 22px;
+      width: 100%; max-width: 370px; max-height: 90dvh; overflow-y: auto;
+    }
+    .card-ic    { font-size: 38px; text-align: center; margin-bottom: 5px; }
+    .card-t     { font-size: 17px; font-weight: 700; color: var(--pri); text-align: center; }
+    .card-st    { font-size: 12px; color: var(--sub); text-align: center; margin-bottom: 12px; }
+    .rules-box  { background: #FFF8E1; border: 1px solid #FFE082; border-radius: 10px;
+                  padding: 10px 12px; margin-bottom: 12px; font-size: 12px; line-height: 1.7; }
+    .rules-box b { color: #E65100; display: block; margin-bottom: 3px; }
+    .rules-box li { margin-left: 14px; }
+    .lbl        { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+    input[type=text] {
+      display: block; width: 100%; padding: 11px 13px;
+      border: 2px solid var(--bdr); border-radius: 10px;
+      font-size: 16px; font-family: inherit; outline: none; margin-bottom: 10px;
+    }
+    input[type=text]:focus { border-color: var(--pri); }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 5px;
+           width: 100%; padding: 12px; border: none; border-radius: 10px;
+           font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer; }
+    .btn + .btn { margin-top: 7px; }
+    .btn:active { opacity: .8; }
+    .btn-pri   { background: var(--pri);   color: white; }
+    .btn-ghost { background: transparent;  color: var(--pri); border: 1.5px solid var(--pri); }
+
+    /* ── BOTTOM SHEET ───────────────────── */
+    .sheet-ov { position: fixed; inset: 0; background: rgba(0,0,0,.45);
+                z-index: 500; display: flex; align-items: flex-end; justify-content: center; }
+    .sheet { background: white; border-radius: 20px 20px 0 0;
+             padding: 14px 16px calc(14px + var(--sb));
+             width: 100%; max-width: 500px; max-height: 60dvh;
+             display: flex; flex-direction: column; }
+    .sh-handle { width: 36px; height: 4px; border-radius: 2px;
+                 background: #CBD5E1; margin: 0 auto 11px; }
+    .sh-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; text-align: center; }
+    .chips    { display: flex; flex-wrap: wrap; gap: 6px; overflow-y: auto; }
+    .chip     { background: var(--pri-lt); color: var(--pri);
+                border-radius: 20px; padding: 4px 11px; font-size: 13px; }
+
+    /* ── TOAST ──────────────────────────── */
+    #toast { position: fixed; bottom: calc(62px + var(--sb)); left: 50%; transform: translateX(-50%);
+             background: rgba(18,18,18,.88); color: white; padding: 8px 16px; border-radius: 18px;
+             font-size: 13px; z-index: 700; opacity: 0; transition: opacity .2s;
+             pointer-events: none; white-space: nowrap;
+             max-width: calc(100vw - 32px); text-align: center; }
+    #toast.on { opacity: 1; }
+
+    /* ── APP ────────────────────────────── */
+    #app { display: flex; flex-direction: column; height: 100dvh; }
+
+    /* Header */
+    .hdr { background: var(--pri); color: white;
+           display: flex; align-items: center; gap: 8px; padding: 0 12px;
+           padding-top: var(--st); height: calc(48px + var(--st)); flex-shrink: 0; }
+    .hdr-back { background: none; border: none; color: white;
+                font-size: 28px; line-height: 1; cursor: pointer; padding: 0 2px;
+                display: flex; align-items: center; }
+    .hdr-inf  { flex: 1; min-width: 0; }
+    .hdr-t    { font-size: 15px; font-weight: 700;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hdr-s    { font-size: 11px; opacity: .75; }
+    .hdr-act  { display: flex; gap: 5px; flex-shrink: 0; }
+    .hbtn { background: rgba(255,255,255,.18); border: none; color: white;
+            border-radius: 8px; padding: 5px 9px;
+            font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
+    .hbtn:active { background: rgba(255,255,255,.32); }
+    .hbtn-d { background: rgba(239,68,68,.35); }
+
+    /* Views */
+    #views { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .view { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .view.on { display: flex; }
+
+    /* Section label */
+    .sec  { padding: 7px 14px 5px; font-size: 11px; font-weight: 700;
+             color: var(--sub); letter-spacing: .5px; background: var(--bg); flex-shrink: 0; }
+
+    /* List */
+    .lst  { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+    /* Row */
+    .row  { display: flex; align-items: center; gap: 10px;
+             padding: 10px 14px; background: white; border-bottom: 1px solid var(--bdr); }
+    .row.tap { cursor: pointer; }
+    .row.tap:active { background: #F5F7FA; }
+    .row-ic { width: 38px; height: 38px; border-radius: 9px; background: var(--pri-lt);
+               display: flex; align-items: center; justify-content: center;
+               font-size: 16px; flex-shrink: 0; color: var(--pri); font-weight: 800; }
+    .row-ic.me  { background: #E8F5E9; }
+    .row-ic.em  { background: #FFEBEE; }
+    .row-bd  { flex: 1; min-width: 0; }
+    .row-n   { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-s   { font-size: 12px; color: var(--sub); margin-top: 1px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-rt  { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .tag { border-radius: 7px; padding: 3px 10px;
+           font-size: 12px; font-weight: 600; border: none; font-family: inherit; cursor: pointer; }
+    .tag:active { opacity: .75; }
+    .tag-j { background: var(--pri);  color: white; }
+    .tag-l { background: #FEE2E2;     color: var(--dng); }
+    .chev  { font-size: 13px; color: #CBD5E1; }
+
+    /* Create button */
+    .create-btn { margin: 10px 12px 2px; display: flex; align-items: center;
+                  justify-content: center; gap: 6px; padding: 10px;
+                  background: var(--pri-lt); border: 1.5px dashed var(--pri); border-radius: 10px;
+                  color: var(--pri); font-size: 14px; font-weight: 600;
+                  cursor: pointer; font-family: inherit; flex-shrink: 0; }
+    .create-btn:active { background: #BBDEFB; }
+
+    /* Empty */
+    .empty { display: flex; flex-direction: column; align-items: center;
+             justify-content: center; padding: 34px 20px;
+             color: var(--sub); gap: 7px; text-align: center; }
+    .empty-ic { font-size: 32px; }
+    .empty-tx { font-size: 13px; line-height: 1.5; }
+
+    /* ── CHAT ───────────────────────────── */
+    .msgs { flex: 1; overflow-y: auto; padding: 10px 12px;
+            display: flex; flex-direction: column; gap: 5px;
+            -webkit-overflow-scrolling: touch; }
+    .bw  { display: flex; flex-direction: column; max-width: 75%; gap: 1px; }
+    .bw.me    { align-self: flex-end;   align-items: flex-end; }
+    .bw.other { align-self: flex-start; align-items: flex-start; }
+    .b-sndr { font-size: 10px; color: var(--sub); padding: 0 4px; }
+    .b {
+      padding: 7px 11px; border-radius: 14px;
+      font-size: 14px; line-height: 1.5;
+      word-break: break-word; white-space: pre-wrap;
+    }
+    .bw.me    .b { background: var(--pri); color: white; border-bottom-right-radius: 3px; }
+    .bw.other .b { background: white; box-shadow: 0 1px 2px rgba(0,0,0,.08); border-bottom-left-radius: 3px; }
+    .b-t  { font-size: 10px; color: var(--sub); padding: 0 4px; }
+    .sys  { text-align: center; font-size: 11px; color: var(--sub); padding: 6px 0; }
+
+    /* Chat input */
+    .ci-bar { background: white; border-top: 1px solid var(--bdr);
+              padding: 7px 10px calc(7px + var(--sb));
+              display: flex; align-items: flex-end; gap: 7px; flex-shrink: 0; }
+    textarea { flex: 1; border: 1.5px solid var(--bdr); border-radius: 18px;
+               padding: 7px 13px; font-size: 15px; font-family: inherit;
+               line-height: 1.4; resize: none; max-height: 78px; outline: none;
+               background: #F8FAFC; }
+    textarea:focus { border-color: var(--pri); background: white; }
+    .send { width: 36px; height: 36px; border-radius: 50%; background: var(--pri);
+            border: none; color: white; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .send:disabled { background: var(--bdr); }
+
+    /* Bottom nav */
+    .bnav { background: white; border-top: 1px solid var(--bdr);
+            display: flex; padding-bottom: var(--sb); flex-shrink: 0; }
+    .ni { flex: 1; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; padding: 5px 0 3px;
+          border: none; background: none; color: var(--sub);
+          font-family: inherit; cursor: pointer; gap: 2px; }
+    .ni.on { color: var(--pri); }
+    .ni-ic { font-size: 21px; }
+    .ni-lb { font-size: 10px; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<!-- セットアップ -->
+<div id="setupModal" class="ov">
+  <div class="card">
+    <div class="card-ic">🏥</div>
+    <div class="card-t">総合犬山中央病院 院内連絡</div>
+    <div class="card-st">パイロット運用 — スタッフ専用</div>
+    <div class="rules-box">
+      <b>⚠️ 利用ルール（必読）</b>
+      <ul>
+        <li>患者個人情報は絶対に流さない</li>
+        <li>業務連絡の補助ツールに限定</li>
+        <li>緊急時は正式な連絡手段を優先</li>
+        <li>正式採用までのパイロット運用</li>
+      </ul>
+    </div>
+    <label class="lbl" for="nameInput">名前・役職（例：田中 看護師）</label>
+    <input type="text" id="nameInput" placeholder="山田 太郎" maxlength="20" autocomplete="off">
+    <button class="btn btn-pri" onclick="doSetup()">同意してはじめる</button>
+  </div>
+</div>
+
+<!-- チャンネル作成 -->
+<div id="createModal" class="ov hidden">
+  <div class="card">
+    <div class="card-t" style="margin-bottom:14px;">📝 新しいチャンネル</div>
+    <label class="lbl" for="chInput">チャンネル名（例：ICU連絡、朝礼）</label>
+    <input type="text" id="chInput" placeholder="チャンネル名" maxlength="20" autocomplete="off">
+    <button class="btn btn-pri"   onclick="createCh()">作成して参加する</button>
+    <button class="btn btn-ghost" onclick="closeCreate()">キャンセル</button>
+  </div>
+</div>
+
+<!-- メンバーシート -->
+<div id="membersSheet" class="sheet-ov hidden">
+  <div class="sheet">
+    <div class="sh-handle"></div>
+    <div class="sh-title" id="shTitle">メンバー</div>
+    <div class="chips" id="shChips"></div>
+    <button class="btn btn-ghost" onclick="closeSheet()" style="margin-top:12px;flex-shrink:0;">閉じる</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- アプリ本体 -->
+<div id="app" class="hidden">
+
+  <div class="hdr">
+    <button class="hdr-back hidden" id="backBtn" onclick="goBack()">‹</button>
+    <div class="hdr-inf">
+      <div class="hdr-t" id="hdrT">院内連絡ツール</div>
+      <div class="hdr-s" id="hdrS"></div>
+    </div>
+    <div class="hdr-act" id="hdrAct">
+      <button class="hbtn" onclick="promptName()">👤 <span id="myLbl"></span></button>
+    </div>
+  </div>
+
+  <div id="views">
+
+    <!-- マイCH -->
+    <div id="vMy" class="view on">
+      <button class="create-btn" onclick="openCreate()">＋ 新しいチャンネルを作成</button>
+      <div class="sec">参加中のチャンネル</div>
+      <div class="lst" id="lMy">
+        <div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「参加する」タブからチャンネルを探してください</div></div>
+      </div>
+    </div>
+
+    <!-- 全チャンネル -->
+    <div id="vAll" class="view">
+      <div class="sec">すべてのチャンネル</div>
+      <div class="lst" id="lAll">
+        <div class="empty"><div class="empty-ic">🔍</div><div class="empty-tx">チャンネルがありません</div></div>
+      </div>
+    </div>
+
+    <!-- スタッフ -->
+    <div id="vStaff" class="view">
+      <div class="sec">登録スタッフ</div>
+      <div class="lst" id="lStaff" style="flex:0 1 auto;max-height:50%;"></div>
+      <div class="sec">チャンネル一覧</div>
+      <div class="lst" id="lChList"></div>
+    </div>
+
+    <!-- チャット -->
+    <div id="vChat" class="view">
+      <div class="msgs" id="msgs"><div class="sys">チャンネルを選択してください</div></div>
+      <div class="ci-bar">
+        <textarea id="chatInput" placeholder="メッセージを入力..." rows="1"
+          oninput="autoH(this)" onkeydown="onKey(event)"></textarea>
+        <button class="send" id="sendBtn" onclick="sendMsg()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <nav class="bnav" id="bnav">
+    <button class="ni on" id="niMy"    onclick="nav('my')"   ><span class="ni-ic">💬</span><span class="ni-lb">マイCH</span></button>
+    <button class="ni"    id="niAll"   onclick="nav('all')"  ><span class="ni-ic">🔍</span><span class="ni-lb">参加する</span></button>
+    <button class="ni"    id="niStaff" onclick="nav('staff')"><span class="ni-ic">👥</span><span class="ni-lb">スタッフ</span></button>
+  </nav>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyAUVZoqxo-Qmsf6wKNT4eEM14ONvqRVz7I",
+  authDomain:"inuyama-chat.firebaseapp.com",
+  projectId:"inuyama-chat",
+  storageBucket:"inuyama-chat.firebasestorage.app",
+  messagingSenderId:"477126215293",
+  appId:"1:477126215293:web:25c07aee52104596625314"
+});
+const db = firebase.firestore();
+const FV = firebase.firestore.FieldValue;
+
+// ── STATE ────────────────────────────────
+let myId   = localStorage.getItem('uid')   || '';
+let myName = localStorage.getItem('uname') || '';
+let curView= 'my';
+let curCh  = null;
+let channels = [];  // [{id,name,members:{uid:name},lastMsg,...}]
+let users    = [];  // [{userId,name,lastSeen}]
+let unsubCh  = null;
+let unsubMsg = null;
+let unsubUs  = null;
+let actx     = null;
+
+const el   = id => document.getElementById(id);
+const show = id => el(id).classList.remove('hidden');
+const hide = id => el(id).classList.add('hidden');
+
+// ── INIT ─────────────────────────────────
+function init() {
+  if ('serviceWorker' in navigator)
+    navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(()=>{});
+
+  if (!myId || !myName) {
+    setTimeout(()=>el('nameInput').focus(), 250);
+  } else {
+    el('myLbl').textContent = myName;
+    hide('setupModal'); show('app');
+    startAll();
+  }
+}
+
+// ── SETUP ────────────────────────────────
+function doSetup() {
+  const n = el('nameInput').value.trim();
+  if (!n) { toast('名前を入力してください'); return; }
+  if (!myId) {
+    myId = 'u'+Date.now()+Math.random().toString(36).slice(2,5);
+    localStorage.setItem('uid', myId);
+  }
+  myName = n; localStorage.setItem('uname', myName);
+  upsertUser();
+  el('myLbl').textContent = myName;
+  hide('setupModal'); show('app');
+  startAll();
+}
+
+function promptName() {
+  const n = prompt('名前・役職を変更:', myName);
+  if (!n?.trim()) return;
+  myName = n.trim(); localStorage.setItem('uname', myName);
+  el('myLbl').textContent = myName;
+  upsertUser();
+  channels.filter(c=>c.members[myId]).forEach(c=>{
+    db.collection('channels').doc(c.id).update({[`members.${myId}`]: myName});
+  });
+  toast('✅ 名前を変更しました');
+}
+
+function upsertUser() {
+  db.collection('users').doc(myId).set(
+    {userId:myId, name:myName, lastSeen:FV.serverTimestamp()}, {merge:true}
+  );
+}
+
+// ── LISTENERS ────────────────────────────
+function startAll() {
+  upsertUser();
+  unsubCh = db.collection('channels').orderBy('createdAt','asc')
+    .onSnapshot(snap=>{
+      channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
+      renderMy(); renderAll(); renderStaff();
+      if (curCh) {
+        const c=channels.find(x=>x.id===curCh.id);
+        if (c) el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
+      }
+    });
+  unsubUs = db.collection('users').orderBy('lastSeen','desc')
+    .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); });
+}
+
+// ── RENDER ───────────────────────────────
+function renderMy() {
+  const mine = channels.filter(c=>c.members[myId]);
+  const d = el('lMy');
+  if (!mine.length) {
+    d.innerHTML='<div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「参加する」タブからチャンネルを探してください</div></div>';
+    return;
+  }
+  d.innerHTML = mine.map(c=>{
+    const cnt = Object.keys(c.members).length;
+    const pre = c.lastMsg ? esc(c.lastMsg).slice(0,24)+(c.lastMsg.length>24?'…':'') : '（メッセージなし）';
+    return `<div class="row tap" onclick="openChat('${c.id}')">
+      <div class="row-ic">#</div>
+      <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人 · ${pre}</div></div>
+      <div class="row-rt"><span class="chev">›</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderAll() {
+  const d = el('lAll');
+  if (!channels.length) {
+    d.innerHTML='<div class="empty"><div class="empty-ic">🔍</div><div class="empty-tx">チャンネルがありません<br>「マイCH」タブから作成できます</div></div>';
+    return;
+  }
+  d.innerHTML = channels.map(c=>{
+    const cnt = Object.keys(c.members).length;
+    const mem = !!c.members[myId];
+    const isEm = c.name.includes('緊急');
+    return `<div class="row tap" onclick="openChat('${c.id}')">
+      <div class="row-ic ${isEm?'em':''}">#</div>
+      <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人参加中 · ${esc(c.createdBy||'')}</div></div>
+      <div class="row-rt" onclick="event.stopPropagation()">
+        ${mem ? `<button class="tag tag-l" onclick="leaveCh('${c.id}')">退会</button>`
+              : `<button class="tag tag-j" onclick="joinCh('${c.id}')">参加</button>`}
+        <span class="chev">›</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderStaff() {
+  // スタッフ
+  const ds = el('lStaff');
+  if (!users.length) {
+    ds.innerHTML='<div class="empty"><div class="empty-tx">読み込み中…</div></div>';
+  } else {
+    ds.innerHTML = users.map(u=>{
+      const me = u.userId===myId;
+      const chs = channels.filter(c=>c.members[u.userId]).map(c=>esc(c.name)).join(' · ');
+      return `<div class="row">
+        <div class="row-ic ${me?'me':''}">${me?'🙋':'👤'}</div>
+        <div class="row-bd"><div class="row-n">${esc(u.name)}${me?' (自分)':''}</div><div class="row-s">${chs||'未参加'}</div></div>
+      </div>`;
+    }).join('');
+  }
+  // チャンネル一覧
+  const dc = el('lChList');
+  if (!channels.length) {
+    dc.innerHTML='<div class="empty"><div class="empty-tx">チャンネルなし</div></div>';
+  } else {
+    dc.innerHTML = channels.map(c=>{
+      const names = Object.values(c.members).map(esc).join(', ');
+      const cnt   = Object.keys(c.members).length;
+      return `<div class="row">
+        <div class="row-ic">#</div>
+        <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人: ${names||'（なし）'}</div></div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── JOIN / LEAVE ─────────────────────────
+async function joinCh(id) {
+  try { await db.collection('channels').doc(id).update({[`members.${myId}`]:myName}); toast('✅ 参加しました'); }
+  catch(e) { toast('⚠️ 参加に失敗'); }
+}
+async function leaveCh(id) {
+  if (!confirm('このチャンネルから退会しますか？')) return;
+  try {
+    // メンバーから自分を削除
+    const chRef = db.collection('channels').doc(id);
+    await chRef.update({[`members.${myId}`]:FV.delete()});
+
+    // 退会後のメンバー数を確認
+    const snap = await chRef.get();
+    const remaining = Object.keys(snap.data()?.members || {}).length;
+
+    if (remaining === 0) {
+      // 全員退会 → メッセージを全削除してチャンネルも消滅
+      const msgs = await chRef.collection('messages').get();
+      const batch = db.batch();
+      msgs.docs.forEach(d => batch.delete(d.ref));
+      batch.delete(chRef);
+      await batch.commit();
+      toast('👋 メンバー0人のため、チャンネルを削除しました');
+    } else {
+      toast('退会しました');
+    }
+
+    if (curCh?.id===id) goBack();
+  } catch(e) { toast('⚠️ 退会に失敗'); }
+}
+
+// ── CREATE ───────────────────────────────
+function openCreate() { el('chInput').value=''; show('createModal'); setTimeout(()=>el('chInput').focus(),250); }
+function closeCreate() { hide('createModal'); }
+
+async function createCh() {
+  const name = el('chInput').value.trim();
+  if (!name) { toast('チャンネル名を入力してください'); return; }
+  if (channels.some(c=>c.name===name)) { toast('同じ名前が既にあります'); return; }
+  try {
+    const ref = await db.collection('channels').add({
+      name, createdBy:myName,
+      createdAt: FV.serverTimestamp(),
+      members: {[myId]:myName}, lastMsg:''
+    });
+    closeCreate(); toast(`✅ #${name} を作成しました`);
+    setTimeout(()=>openChat(ref.id), 500);
+  } catch(e) { toast('⚠️ 作成に失敗'); }
+}
+
+// ── CHAT ─────────────────────────────────
+function openChat(id) {
+  const c = channels.find(x=>x.id===id);
+  if (!c) return;
+  curCh = {id, name:c.name};
+  const cnt = Object.keys(c.members).length;
+  const mem = !!c.members[myId];
+
+  el('backBtn').classList.remove('hidden');
+  el('hdrT').textContent = c.name;
+  el('hdrS').textContent = cnt+'人参加中';
+  el('hdrAct').innerHTML = `
+    <button class="hbtn" onclick="showMembers('${id}')">👥</button>
+    <button class="hbtn" onclick="renameCh('${id}')">✏️</button>
+    ${mem ? `<button class="hbtn hbtn-d" onclick="leaveCh('${id}')">退会</button>`
+          : `<button class="hbtn" onclick="joinCh('${id}')">参加する</button>`}`;
+
+  ['My','All','Staff'].forEach(v=>el('v'+v).classList.remove('on'));
+  el('vChat').classList.add('on');
+  el('bnav').classList.add('hidden');
+  loadMsgs(id);
+}
+
+function goBack() {
+  if (unsubMsg) { unsubMsg(); unsubMsg=null; }
+  curCh=null;
+  el('vChat').classList.remove('on');
+  el('bnav').classList.remove('hidden');
+  el('backBtn').classList.add('hidden');
+  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button>`;
+  nav(curView==='chat'?'my':curView);
+}
+
+function loadMsgs(id) {
+  const area = el('msgs');
+  area.innerHTML='<div class="sys">読み込み中…</div>';
+  let first=true;
+  unsubMsg = db.collection('channels').doc(id)
+    .collection('messages').orderBy('timestamp','asc').limitToLast(100)
+    .onSnapshot(snap=>{
+      if (first) {
+        first=false; area.innerHTML='';
+        if (snap.empty) { area.innerHTML='<div class="sys">👋 最初のメッセージを送ってみましょう</div>'; }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id)); scrollEnd(); }
+      } else {
+        snap.docChanges().forEach(ch=>{
+          if (ch.type==='added') {
+            area.querySelector('.sys')?.remove();
+            putMsg(area,ch.doc.data(),ch.doc.id);
+            if (ch.doc.data().userId!==myId) beep();
+            scrollEnd();
+          }
+        });
+      }
+    });
+}
+
+function putMsg(area,data,id) {
+  const me = data.userId===myId;
+  const t  = data.timestamp?.toDate ? fmtT(data.timestamp.toDate()) : '';
+  const d  = document.createElement('div');
+  d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
+  d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
+    <div class="b">${esc(data.text)}</div>
+    <div class="b-t">${t}</div>`;
+  area.appendChild(d);
+}
+
+async function sendMsg() {
+  const inp  = el('chatInput');
+  const text = inp.value.trim();
+  if (!text||!curCh) return;
+  if (text.length>500) { toast('500文字以内で入力してください'); return; }
+  const c = channels.find(x=>x.id===curCh.id);
+  if (!c?.members[myId]) { toast('送信には参加が必要です'); return; }
+  inp.value=''; autoH(inp);
+  el('sendBtn').disabled=true;
+  try {
+    const batch=db.batch();
+    batch.set(db.collection('channels').doc(curCh.id).collection('messages').doc(),
+      {text,name:myName,userId:myId,timestamp:FV.serverTimestamp()});
+    batch.update(db.collection('channels').doc(curCh.id),
+      {lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp()});
+    await batch.commit();
+  } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
+  finally { el('sendBtn').disabled=false; inp.focus(); }
+}
+
+// ── MEMBER SHEET ─────────────────────────
+async function renameCh(id) {
+  const c = channels.find(x=>x.id===id); if (!c) return;
+  const newName = prompt('チャンネル名を変更:', c.name);
+  if (!newName||!newName.trim()) return;
+  if (channels.some(x=>x.name===newName.trim()&&x.id!==id)) { toast('同じ名前が既にあります'); return; }
+  try {
+    await db.collection('channels').doc(id).update({name: newName.trim()});
+    el('hdrT').textContent = newName.trim();
+    curCh.name = newName.trim();
+    toast('✅ チャンネル名を変更しました');
+  } catch(e) { toast('⚠️ 変更に失敗'); }
+}
+
+function showMembers(id) {
+  const c = channels.find(x=>x.id===id); if (!c) return;
+  const names = Object.values(c.members);
+  el('shTitle').textContent = `#${c.name} のメンバー (${names.length}人)`;
+  el('shChips').innerHTML = names.map(n=>`<span class="chip">${esc(n)}</span>`).join('');
+  show('membersSheet');
+}
+function closeSheet() { hide('membersSheet'); }
+
+// ── NAV ──────────────────────────────────
+function nav(v) {
+  curView=v;
+  ['My','All','Staff'].forEach(x=>{ el('v'+x).classList.remove('on'); el('ni'+x).classList.remove('on'); });
+  const map={my:'My',all:'All',staff:'Staff'};
+  el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
+  const titles={my:'院内連絡ツール',all:'チャンネルを探す',staff:'スタッフ一覧'};
+  el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
+  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button>`;
+}
+
+// ── UTILS ────────────────────────────────
+function scrollEnd() { const a=el('msgs'); requestAnimationFrame(()=>a.scrollTop=a.scrollHeight); }
+function autoH(t)    { t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,78)+'px'; }
+function onKey(e)    { if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){e.preventDefault();sendMsg();} }
+function fmtT(d)     { const now=new Date(),t=d.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+                        return d.toDateString()===now.toDateString()?t:`${d.getMonth()+1}/${d.getDate()} ${t}`; }
+function esc(s)      { const d=document.createElement('div'); d.appendChild(document.createTextNode(String(s||''))); return d.innerHTML; }
+function toast(msg)  { const t=el('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2800); }
+function beep()      {
+  try {
+    if (!actx) actx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(),g=actx.createGain();
+    o.connect(g); g.connect(actx.destination);
+    o.frequency.setValueAtTime(660,actx.currentTime);
+    o.frequency.setValueAtTime(880,actx.currentTime+0.08);
+    g.gain.setValueAtTime(0.2,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.3);
+    o.start(); o.stop(actx.currentTime+0.3);
+  } catch(e) {}
+}
+
+el('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
+el('chInput'  ).addEventListener('keydown',e=>{ if(e.key==='Enter') createCh(); });
+el('createModal' ).addEventListener('click',e=>{ if(e.target===el('createModal'))  closeCreate(); });
+el('membersSheet').addEventListener('click',e=>{ if(e.target===el('membersSheet')) closeSheet(); });
+
+init();
+</script>
+</body>
+</html>
