@@ -225,6 +225,22 @@
   </div>
 </div>
 
+<!-- 名前変更モーダル -->
+<div id="nameModal" class="ov hidden">
+  <div class="card">
+    <div class="card-t" style="margin-bottom:14px;">👤 アカウント設定</div>
+    <label class="lbl" for="nameChangeInput">名前・役職</label>
+    <input type="text" id="nameChangeInput" maxlength="20" autocomplete="off">
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <button class="btn btn-ghost" onclick="closeNameModal()" style="flex:1;">キャンセル</button>
+      <button class="btn btn-pri"   onclick="saveName()"        style="flex:2;">保存</button>
+    </div>
+    <div style="text-align:right;margin-top:14px;padding-top:10px;border-top:1px solid #F0F4F8;">
+      <button onclick="confirmDelete()" style="background:none;border:none;color:#EF4444;font-size:12px;cursor:pointer;font-family:inherit;padding:4px 2px;">アカウントを削除する</button>
+    </div>
+  </div>
+</div>
+
 <!-- チャンネル作成 -->
 <div id="createModal" class="ov hidden">
   <div class="card">
@@ -233,6 +249,19 @@
     <input type="text" id="chInput" placeholder="チャンネル名" maxlength="20" autocomplete="off">
     <button class="btn btn-pri"   onclick="createCh()">作成して参加する</button>
     <button class="btn btn-ghost" onclick="closeCreate()">キャンセル</button>
+  </div>
+</div>
+
+<!-- アカウント削除確認 -->
+<div id="deleteModal" class="ov hidden">
+  <div class="card">
+    <div class="card-ic">⚠️</div>
+    <div class="card-t" style="color:#EF4444;margin-bottom:8px;">本当に削除しますか？</div>
+    <div style="font-size:13px;color:#6B7280;text-align:center;margin-bottom:18px;line-height:1.6;">
+      全チャンネルから退会し、スタッフ一覧からも削除されます。<br>この操作は取り消せません。
+    </div>
+    <button class="btn" onclick="deleteAccount()" style="background:#EF4444;color:white;margin-bottom:7px;">削除する</button>
+    <button class="btn btn-ghost" onclick="hide('deleteModal')">やめる</button>
   </div>
 </div>
 
@@ -288,9 +317,7 @@
       <div class="lst" id="lStaff" style="flex:0 1 auto;max-height:50%;"></div>
       <div class="sec">チャンネル一覧</div>
       <div class="lst" id="lChList"></div>
-      <div style="padding:12px 12px calc(12px + var(--sb));flex-shrink:0;">
-        <button class="btn" onclick="deleteAccount()" style="background:#FEE2E2;color:#EF4444;font-size:13px;padding:10px;">⚠️ アカウントを削除する</button>
-      </div>
+
     </div>
 
     <!-- チャット -->
@@ -354,7 +381,7 @@ let myDMs    = [];
 let lastRead = JSON.parse(localStorage.getItem('lastRead')||'{}');
 
 async function deleteAccount() {
-  if (!confirm('アカウントを削除しますか？\n全チャンネルから退会し、スタッフ一覧からも消えます。')) return;
+  hide('deleteModal');
   try {
     const batch = db.batch();
     // 参加中の全チャンネルから退会
@@ -421,15 +448,30 @@ function doSetup() {
 }
 
 function promptName() {
-  const n = prompt('名前・役職を変更:', myName);
-  if (!n?.trim()) return;
-  myName = n.trim(); localStorage.setItem('uname', myName);
-  el('myLbl').textContent = myName;
+  el('nameChangeInput').value = myName;
+  show('nameModal');
+  setTimeout(()=>el('nameChangeInput').focus(), 250);
+}
+
+function closeNameModal() { hide('nameModal'); }
+
+function saveName() {
+  const n = el('nameChangeInput').value.trim();
+  if (!n) { toast('名前を入力してください'); return; }
+  myName = n; localStorage.setItem('uname', myName);
+  // myLblはnavで再生成されるが存在するときは更新
+  const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
   upsertUser();
   channels.filter(c=>c.members[myId]).forEach(c=>{
     db.collection('channels').doc(c.id).update({[`members.${myId}`]: myName});
   });
+  hide('nameModal');
   toast('✅ 名前を変更しました');
+}
+
+function confirmDelete() {
+  hide('nameModal');
+  show('deleteModal');
 }
 
 function upsertUser() {
@@ -905,6 +947,9 @@ function beep()      {
 }
 
 el('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
+el('nameChangeInput').addEventListener('keydown',e=>{ if(e.key==='Enter') saveName(); });
+el('nameModal').addEventListener('click',e=>{ if(e.target===el('nameModal')) closeNameModal(); });
+el('deleteModal').addEventListener('click',e=>{ if(e.target===el('deleteModal')) hide('deleteModal'); });
 el('chInput'  ).addEventListener('keydown',e=>{ if(e.key==='Enter') createCh(); });
 el('createModal' ).addEventListener('click',e=>{ if(e.target===el('createModal'))  closeCreate(); });
 el('membersSheet').addEventListener('click',e=>{ if(e.target===el('membersSheet')) closeSheet(); });
