@@ -439,25 +439,54 @@ function startAll() {
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
     .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); });
+
+  // DM listener（自分が参加しているDM）
+  unsubDMs = db.collection('dms')
+    .where('participantIds','array-contains',myId)
+    .onSnapshot(snap=>{
+      myDMs = snap.docs.map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>(b.lastAt?.seconds||0)-(a.lastAt?.seconds||0));
+      renderMy();
+    });
 }
 
 // ── RENDER ───────────────────────────────
 function renderMy() {
   const mine = channels.filter(c=>c.members[myId]);
   const d = el('lMy');
-  if (!mine.length) {
-    d.innerHTML='<div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「参加する」タブからチャンネルを探してください</div></div>';
-    return;
+  let html = '';
+
+  // チャンネルセクション
+  if (mine.length) {
+    html += mine.map(c=>{
+      const cnt = Object.keys(c.members).length;
+      const pre = c.lastMsg ? esc(c.lastMsg).slice(0,24)+(c.lastMsg.length>24?'…':'') : '（メッセージなし）';
+      return `<div class="row tap" onclick="openChat('${c.id}')">
+        <div class="row-ic">#</div>
+        <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人 · ${pre}</div></div>
+        <div class="row-rt"><span class="chev">›</span></div>
+      </div>`;
+    }).join('');
+  } else {
+    html += '<div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「参加する」タブからチャンネルを探してください</div></div>';
   }
-  d.innerHTML = mine.map(c=>{
-    const cnt = Object.keys(c.members).length;
-    const pre = c.lastMsg ? esc(c.lastMsg).slice(0,24)+(c.lastMsg.length>24?'…':'') : '（メッセージなし）';
-    return `<div class="row tap" onclick="openChat('${c.id}')">
-      <div class="row-ic">#</div>
-      <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人 · ${pre}</div></div>
-      <div class="row-rt"><span class="chev">›</span></div>
-    </div>`;
-  }).join('');
+
+  // DMセクション
+  if (myDMs.length) {
+    html += '<div class="sec" style="background:var(--bg);padding:7px 14px 5px;font-size:11px;font-weight:700;color:var(--sub);">ダイレクトメッセージ</div>';
+    html += myDMs.map(dm=>{
+      const otherId   = Object.keys(dm.participants||{}).find(k=>k!==myId)||'';
+      const otherName = (dm.participants||{})[otherId]||'?';
+      const pre = dm.lastMsg ? esc(dm.lastMsg).slice(0,24)+(dm.lastMsg.length>24?'…':'') : '（メッセージなし）';
+      return `<div class="row tap" onclick="openDM('${otherId}','${otherName.replace(/'/g,"\'")}')">
+        <div class="row-ic" style="background:#F3E5F5;color:#7B1FA2;">💬</div>
+        <div class="row-bd"><div class="row-n">${esc(otherName)}</div><div class="row-s">${pre}</div></div>
+        <div class="row-rt"><span class="chev">›</span></div>
+      </div>`;
+    }).join('');
+  }
+
+  d.innerHTML = html;
 }
 
 function renderAll() {
@@ -564,6 +593,49 @@ async function createCh() {
   } catch(e) { toast('⚠️ 作成に失敗'); }
 }
 
+// ── DM ──────────────────────────────────────
+function openDM(otherId, otherName) {
+  if (!otherId || otherId === myId) return;
+  const dmId = [myId, otherId].sort().join('_');
+  curDM = { dmId, otherId, otherName };
+  curCh = null;
+
+  el('backBtn').classList.remove('hidden');
+  el('hdrT').textContent = otherName;
+  el('hdrS').textContent = 'ダイレクトメッセージ';
+  el('hdrAct').innerHTML = '';
+
+  ['My','All','Staff'].forEach(v=>el('v'+v).classList.remove('on'));
+  el('vChat').classList.add('on');
+  el('bnav').classList.add('hidden');
+  loadDMMsgs(dmId);
+}
+
+function loadDMMsgs(dmId) {
+  const area = el('msgs');
+  area.innerHTML = '<div class="sys">読み込み中…</div>';
+  let first = true;
+  if (unsubMsg) { unsubMsg(); unsubMsg = null; }
+  unsubMsg = db.collection('dms').doc(dmId)
+    .collection('messages').orderBy('timestamp','asc').limitToLast(100)
+    .onSnapshot(snap=>{
+      if (first) {
+        first=false; area.innerHTML='';
+        if (snap.empty) { area.innerHTML='<div class="sys">💬 最初のメッセージを送ってみましょう</div>'; }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id)); scrollEnd(); }
+      } else {
+        snap.docChanges().forEach(ch=>{
+          if (ch.type==='added') {
+            area.querySelector('.sys')?.remove();
+            putMsg(area,ch.doc.data(),ch.doc.id);
+            if (ch.doc.data().userId!==myId) beep();
+            scrollEnd();
+          }
+        });
+      }
+    });
+}
+
 // ── CHAT ─────────────────────────────────
 function openChat(id) {
   const c = channels.find(x=>x.id===id);
@@ -589,7 +661,7 @@ function openChat(id) {
 
 function goBack() {
   if (unsubMsg) { unsubMsg(); unsubMsg=null; }
-  curCh=null;
+  curCh=null; curDM=null;
   el('vChat').classList.remove('on');
   el('bnav').classList.remove('hidden');
   el('backBtn').classList.add('hidden');
@@ -635,8 +707,31 @@ function putMsg(area,data,id) {
 async function sendMsg() {
   const inp  = el('chatInput');
   const text = inp.value.trim();
-  if (!text||!curCh) return;
+  if (!text) return;
   if (text.length>500) { toast('500文字以内で入力してください'); return; }
+
+  // DM モード
+  if (curDM) {
+    inp.value=''; autoH(inp);
+    el('sendBtn').disabled=true;
+    try {
+      const batch=db.batch();
+      const dmRef=db.collection('dms').doc(curDM.dmId);
+      batch.set(dmRef.collection('messages').doc(),
+        {text,name:myName,userId:myId,timestamp:FV.serverTimestamp()});
+      batch.set(dmRef, {
+        participantIds:[myId,curDM.otherId],
+        participants:{[myId]:myName,[curDM.otherId]:curDM.otherName},
+        lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp()
+      },{merge:true});
+      await batch.commit();
+    } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
+    finally { el('sendBtn').disabled=false; inp.focus(); }
+    return;
+  }
+
+  // チャンネルモード
+  if (!curCh) return;
   const c = channels.find(x=>x.id===curCh.id);
   if (!c?.members[myId]) { toast('送信には参加が必要です'); return; }
   inp.value=''; autoH(inp);
