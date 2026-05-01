@@ -257,6 +257,7 @@
     </div>
     <div class="hdr-act" id="hdrAct">
       <button class="hbtn" onclick="promptName()">👤 <span id="myLbl"></span></button>
+      <button class="hbtn" id="bellBtn" onclick="requestNotify()" title="通知を有効化">🔔</button>
     </div>
   </div>
 
@@ -673,7 +674,7 @@ function goBack() {
   el('vChat').classList.remove('on');
   el('bnav').classList.remove('hidden');
   el('backBtn').classList.add('hidden');
-  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button>`;
+  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" onclick="requestNotify()">🔔</button>`;
   nav(curView==='chat'?'my':curView);
 }
 
