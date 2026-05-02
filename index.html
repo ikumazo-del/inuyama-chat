@@ -187,6 +187,15 @@
             border: none; color: white; cursor: pointer;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .send:disabled { background: var(--bdr); }
+    .img-btn { width: 36px; height: 36px; border-radius: 50%;
+               background: var(--pri-lt); border: none; color: var(--pri);
+               cursor: pointer; font-size: 18px; flex-shrink: 0;
+               display: flex; align-items: center; justify-content: center; }
+    .img-btn:active { opacity: .7; }
+    .msg-img { max-width: 100%; border-radius: 10px; cursor: pointer; display: block; }
+    .img-viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92);
+                  z-index: 800; display: flex; align-items: center; justify-content: center; }
+    .img-viewer img { max-width: 95vw; max-height: 90dvh; border-radius: 8px; }
 
     /* Bottom nav */
     .bnav { background: white; border-top: 1px solid var(--bdr);
@@ -324,6 +333,9 @@
     <div id="vChat" class="view">
       <div class="msgs" id="msgs"><div class="sys">チャンネルを選択してください</div></div>
       <div class="ci-bar">
+        <input type="file" id="imgInput" accept="image/*" capture="environment"
+          style="display:none" onchange="handleImageFile(event)">
+        <button class="img-btn" onclick="el('imgInput').click()">📷</button>
         <textarea id="chatInput" placeholder="メッセージを入力..." rows="1"
           oninput="autoH(this)" onkeydown="onKey(event)"></textarea>
         <button class="send" id="sendBtn" onclick="sendMsg()">
@@ -815,8 +827,16 @@ function putMsg(area,data,id) {
   const readLabel = me && readers > 0 ? `<span class="read-label">既読 ${readers}</span>` : '';
   const d  = document.createElement('div');
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
+  let content;
+  if (data.type==='image') {
+    content = data.imageData
+      ? `<div class="b" style="padding:4px;"><img class="msg-img" src="${data.imageData}" onclick="openImageViewer(this.src)" alt="画像"></div>`
+      : `<div class="b" style="color:var(--sub);font-style:italic;">（画像の有効期限が切れました）</div>`;
+  } else {
+    content = `<div class="b">${esc(data.text)}</div>`;
+  }
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
-    <div class="b">${esc(data.text)}</div>
+    ${content}
     <div class="b-t">${t}${readLabel}</div>`;
   area.appendChild(d);
 }
@@ -923,6 +943,73 @@ async function requestNotify() {
       toast('通知が許可されませんでした');
     }
   } catch(e) { console.error(e); toast('通知設定でエラーが発生しました'); }
+}
+
+// ── 画像送信 ──────────────────────────────
+function compressImage(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_W = 1200;
+        let w = img.width, h = img.height;
+        if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleImageFile(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  toast('📷 圧縮中…');
+  try {
+    const base64 = await compressImage(file);
+    await sendImage(base64);
+  } catch(err) { toast('⚠️ 画像の送信に失敗しました'); }
+}
+
+async function sendImage(base64) {
+  if (!curCh && !curDM) return;
+  const expireAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  const msgData = { type:'image', imageData:base64, name:myName, userId:myId,
+                    timestamp:FV.serverTimestamp(), expireAt };
+  if (curDM) {
+    const dmRef = db.collection('dms').doc(curDM.dmId);
+    const batch = db.batch();
+    batch.set(dmRef.collection('messages').doc(), msgData);
+    batch.set(dmRef, {
+      participantIds:[myId,curDM.otherId],
+      participants:{[myId]:myName,[curDM.otherId]:curDM.otherName},
+      lastMsg:'📷 画像', lastAt:FV.serverTimestamp()
+    },{merge:true});
+    await batch.commit();
+    return;
+  }
+  const c = channels.find(x=>x.id===curCh.id);
+  if (!c?.members[myId]) { toast('送信には参加が必要です'); return; }
+  const batch = db.batch();
+  batch.set(db.collection('channels').doc(curCh.id).collection('messages').doc(), msgData);
+  batch.update(db.collection('channels').doc(curCh.id),
+    {lastMsg:'📷 画像', lastAt:FV.serverTimestamp()});
+  await batch.commit();
+  toast('✅ 画像を送信しました');
+}
+
+function openImageViewer(src) {
+  const div = document.createElement('div');
+  div.className = 'img-viewer';
+  div.innerHTML = `<img src="${src}" alt="画像">`;
+  div.addEventListener('click', ()=>div.remove());
+  document.body.appendChild(div);
 }
 
 // ── 既読管理 ──────────────────────────────
