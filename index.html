@@ -136,7 +136,7 @@
            font-size: 12px; font-weight: 600; border: none; font-family: inherit; cursor: pointer; }
     .tag:active { opacity: .75; }
     .tag-j { background: var(--pri);  color: white; }
-    .tag-l { background: #FEE2E2;     color: var(--dng); }
+    .tag-l { background: #F1F5F9;     color: #94A3B8; }
     .chev  { font-size: 13px; color: #CBD5E1; }
 
     /* Create button */
@@ -203,6 +203,10 @@
     .ni.on { color: var(--pri); }
     .ni-ic { font-size: 21px; }
     .ni-lb { font-size: 10px; }
+    .ni-bb { flex: 0 0 42px; opacity: .65; }
+    .ni-bb .ni-ic { font-size: 14px; }
+    .ni-bb .ni-lb { font-size: 8px; }
+    .ni-bb.on { opacity: 1; color: var(--pri); }
 
     .hidden { display: none !important; }
   </style>
@@ -301,15 +305,14 @@
 
     <!-- マイCH -->
     <div id="vMy" class="view on">
-      <button class="create-btn" onclick="openCreate()">＋ 新しいチャンネルを作成</button>
-      <div class="sec">参加中のチャンネル</div>
       <div class="lst" id="lMy">
-        <div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「参加する」タブからチャンネルを探してください</div></div>
+        <div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「チャンネル」タブからチャンネルを探してください</div></div>
       </div>
     </div>
 
     <!-- 全チャンネル -->
     <div id="vAll" class="view">
+      <button class="create-btn" onclick="openCreate()">＋ 新しいチャンネルを作成</button>
       <div class="sec">すべてのチャンネル</div>
       <div class="lst" id="lAll">
         <div class="empty"><div class="empty-ic">🔍</div><div class="empty-tx">チャンネルがありません</div></div>
@@ -319,10 +322,7 @@
     <!-- スタッフ -->
     <div id="vStaff" class="view">
       <div class="sec">登録スタッフ</div>
-      <div class="lst" id="lStaff" style="flex:0 1 auto;max-height:50%;"></div>
-      <div class="sec">チャンネル一覧</div>
-      <div class="lst" id="lChList"></div>
-
+      <div class="lst" id="lStaff"></div>
     </div>
 
     <!-- チャット -->
@@ -349,8 +349,9 @@
   </div>
 
   <nav class="bnav" id="bnav">
+    <button class="ni ni-bb" id="niBb" onclick="nav('bb')"><span class="ni-ic">ℹ️</span><span class="ni-lb">掲示板</span></button>
     <button class="ni on" id="niMy"    onclick="nav('my')"   ><span class="ni-ic">💬</span><span class="ni-lb">マイCH</span></button>
-    <button class="ni"    id="niAll"   onclick="nav('all')"  ><span class="ni-ic">🔍</span><span class="ni-lb">参加する</span></button>
+    <button class="ni"    id="niAll"   onclick="nav('all')"  ><span class="ni-ic">🔍</span><span class="ni-lb">チャンネル</span></button>
     <button class="ni"    id="niStaff" onclick="nav('staff')"><span class="ni-ic">👥</span><span class="ni-lb">スタッフ</span></button>
   </nav>
 
@@ -387,8 +388,9 @@ let unsubCh  = null;
 let unsubMsg = null;
 let unsubUs  = null;
 let unsubDMs = null;
-let curDM    = null;
-let myDMs    = [];
+let curDM      = null;
+let myDMs      = [];
+let curBulletin = false;
 let lastRead = JSON.parse(localStorage.getItem('lastRead')||'{}');
 
 async function deleteAccount() {
@@ -627,20 +629,6 @@ function renderStaff() {
       </div>`;
     }).join('');
   }
-  // チャンネル一覧
-  const dc = el('lChList');
-  if (!channels.length) {
-    dc.innerHTML='<div class="empty"><div class="empty-tx">チャンネルなし</div></div>';
-  } else {
-    dc.innerHTML = channels.map(c=>{
-      const names = Object.values(c.members).map(esc).join(', ');
-      const cnt   = Object.keys(c.members).length;
-      return `<div class="row">
-        <div class="row-ic">#</div>
-        <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人: ${names||'（なし）'}</div></div>
-      </div>`;
-    }).join('');
-  }
 }
 
 // ── JOIN / LEAVE ─────────────────────────
@@ -798,12 +786,63 @@ function openChat(id) {
 
 function goBack() {
   if (unsubMsg) { unsubMsg(); unsubMsg=null; }
-  curCh=null; curDM=null;
+  curCh=null; curDM=null; curBulletin=false;
   el('vChat').classList.remove('on');
   el('bnav').classList.remove('hidden');
   el('backBtn').classList.add('hidden');
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" onclick="requestNotify()">🔔</button>`;
-  nav(curView==='chat'?'my':curView);
+  nav(curView==='chat'||curView==='bb'?'my':curView);
+}
+
+// ── 掲示板 ───────────────────────────────
+const BB_ID = 'main';
+
+async function openBulletin() {
+  initAudio();
+  curBulletin = true; curCh = null; curDM = null;
+  // 自分をメンバーとして登録（初回のみ）
+  db.collection('bulletin').doc(BB_ID).set(
+    { members: { [myId]: myName } }, { merge: true }
+  ).catch(()=>{});
+
+  el('backBtn').classList.remove('hidden');
+  el('hdrT').textContent = '📋 掲示板';
+  el('hdrS').textContent = '全スタッフ共有';
+  el('hdrAct').innerHTML = '';
+  el('niBb').classList.add('on');
+  ['My','All','Staff'].forEach(x=>{ el('v'+x).classList.remove('on'); el('ni'+x).classList.remove('on'); });
+  el('vChat').classList.add('on');
+  el('bnav').classList.add('hidden');
+
+  const area = el('msgs');
+  area.innerHTML = '<div class="sys">読み込み中…</div>';
+  let first = true;
+  if (unsubMsg) { unsubMsg(); unsubMsg=null; }
+  unsubMsg = db.collection('bulletin').doc(BB_ID)
+    .collection('messages').orderBy('timestamp','asc').limitToLast(100)
+    .onSnapshot(snap=>{
+      if (first) {
+        first=false; area.innerHTML='';
+        if (snap.empty) { area.innerHTML='<div class="sys">📋 掲示板へようこそ。最初のメッセージを投稿してください</div>'; }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id)); scrollEnd(); }
+      } else {
+        snap.docChanges().forEach(ch=>{
+          if (ch.type==='added') {
+            area.querySelector('.sys')?.remove();
+            putMsg(area,ch.doc.data(),ch.doc.id);
+            if (ch.doc.data().userId!==myId) { beep(); markReadMsg(ch.doc.ref); }
+            scrollEnd();
+          }
+          if (ch.type==='removed') {
+            area.querySelector(`[data-id="${ch.doc.id}"]`)?.remove();
+          }
+          if (ch.type==='modified') {
+            const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
+            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id); area.insertBefore(tmp.firstElementChild,next); }
+          }
+        });
+      }
+    });
 }
 
 function loadMsgs(id) {
@@ -851,7 +890,50 @@ function putMsg(area,data,id) {
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
+  // 自分のメッセージは長押しで削除メニュー
+  if (me) {
+    let pressTimer = null;
+    const startPress = () => { pressTimer = setTimeout(()=>showDeleteMenu(d,id), 600); };
+    const cancelPress = () => { clearTimeout(pressTimer); };
+    d.addEventListener('touchstart', startPress, {passive:true});
+    d.addEventListener('touchend',   cancelPress);
+    d.addEventListener('touchmove',  cancelPress, {passive:true});
+    d.addEventListener('mousedown',  startPress);
+    d.addEventListener('mouseup',    cancelPress);
+    d.addEventListener('mouseleave', cancelPress);
+  }
   area.appendChild(d);
+}
+
+function showDeleteMenu(el, msgId) {
+  // 既存メニューがあれば閉じる
+  document.querySelector('.del-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'del-menu';
+  menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
+  menu.innerHTML = `<div style="background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;">
+    <div style="font-size:14px;color:#6B7280;margin-bottom:14px;">このメッセージを削除しますか？</div>
+    <button onclick="deleteMsg('${msgId}')" style="display:block;width:100%;padding:11px;background:#EF4444;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;">削除する</button>
+    <button onclick="this.closest('.del-menu').remove()" style="display:block;width:100%;padding:11px;background:#F1F5F9;color:#6B7280;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;">キャンセル</button>
+  </div>`;
+  menu.addEventListener('click', e=>{ if(e.target===menu) menu.remove(); });
+  document.body.appendChild(menu);
+}
+
+async function deleteMsg(msgId) {
+  document.querySelector('.del-menu')?.remove();
+  try {
+    let ref;
+    if (curDM) {
+      ref = db.collection('dms').doc(curDM.dmId).collection('messages').doc(msgId);
+    } else if (curCh) {
+      ref = db.collection('channels').doc(curCh.id).collection('messages').doc(msgId);
+    } else if (curBulletin) {
+      ref = db.collection('bulletin').doc('main').collection('messages').doc(msgId);
+    }
+    if (ref) await ref.delete();
+    toast('🗑️ 削除しました');
+  } catch(e) { toast('⚠️ 削除に失敗しました'); }
 }
 
 async function sendMsg() {
@@ -876,6 +958,18 @@ async function sendMsg() {
         lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp()
       },{merge:true});
       await batch.commit();
+    } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
+    finally { el('sendBtn').disabled=false; inp.focus(); }
+    return;
+  }
+
+  // 掲示板モード
+  if (curBulletin) {
+    inp.value=''; autoH(inp);
+    el('sendBtn').disabled=true;
+    try {
+      await db.collection('bulletin').doc(BB_ID).collection('messages').doc()
+        .set({text,name:myName,userId:myId,timestamp:FV.serverTimestamp()});
     } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
     finally { el('sendBtn').disabled=false; inp.focus(); }
     return;
@@ -923,13 +1017,15 @@ function closeSheet() { hide('membersSheet'); }
 
 // ── NAV ──────────────────────────────────
 function nav(v) {
+  if (v==='bb') { openBulletin(); return; }
   curView=v;
   ['My','All','Staff'].forEach(x=>{ el('v'+x).classList.remove('on'); el('ni'+x).classList.remove('on'); });
+  el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール',all:'チャンネルを探す',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
-  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button>`;
+  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()" title="通知を有効化">🔔</button>`;
 }
 
 // ── UTILS ────────────────────────────────
@@ -1015,6 +1111,14 @@ async function sendImage(dataUrl) {
         lastMsg: '📷 画像', lastAt: FV.serverTimestamp()
       }, { merge: true });
       await batch.commit();
+    } catch(e) { toast('⚠️ 送信失敗'); }
+    finally { el('sendBtn').disabled = false; }
+    return;
+  }
+  if (curBulletin) {
+    el('sendBtn').disabled = true;
+    try {
+      await db.collection('bulletin').doc(BB_ID).collection('messages').doc().set(msgData);
     } catch(e) { toast('⚠️ 送信失敗'); }
     finally { el('sendBtn').disabled = false; }
     return;
