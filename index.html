@@ -203,9 +203,9 @@
     .ni.on { color: var(--pri); }
     .ni-ic { font-size: 21px; }
     .ni-lb { font-size: 10px; }
-    .ni-bb { flex: 0 0 42px; opacity: .65; }
-    .ni-bb .ni-ic { font-size: 14px; }
-    .ni-bb .ni-lb { font-size: 8px; }
+    .ni-bb { flex: 0 0 46px; opacity: .7; }
+    .ni-bb .ni-ic { font-size: 18px; }
+    .ni-bb .ni-lb { display: none; }
     .ni-bb.on { opacity: 1; color: var(--pri); }
 
     .hidden { display: none !important; }
@@ -716,33 +716,28 @@ function loadDMMsgs(dmId) {
   area.innerHTML = '<div class="sys">読み込み中…</div>';
   let first = true;
   if (unsubMsg) { unsubMsg(); unsubMsg = null; }
-  unsubMsg = db.collection('dms').doc(dmId)
-    .collection('messages').orderBy('timestamp','asc').limitToLast(100)
+  const col = db.collection('dms').doc(dmId).collection('messages');
+  const getRef = id => col.doc(id);
+  unsubMsg = col.orderBy('timestamp','asc').limitToLast(100)
     .onSnapshot(snap=>{
       if (first) {
         first=false; area.innerHTML='';
         if (snap.empty) { area.innerHTML='<div class="sys">💬 最初のメッセージを送ってみましょう</div>'; }
-        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id)); scrollEnd(); }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id,getRef)); scrollEnd(); }
       } else {
         snap.docChanges().forEach(ch=>{
           if (ch.type==='added') {
             area.querySelector('.sys')?.remove();
-            putMsg(area,ch.doc.data(),ch.doc.id);
-            if (ch.doc.data().userId!==myId) {
-              beep();
-              markReadMsg(ch.doc.ref);
-            }
+            putMsg(area,ch.doc.data(),ch.doc.id,getRef);
+            if (ch.doc.data().userId!==myId) { beep(); markReadMsg(ch.doc.ref); }
             scrollEnd();
+          }
+          if (ch.type==='removed') {
+            area.querySelector(`[data-id="${ch.doc.id}"]`)?.remove();
           }
           if (ch.type==='modified') {
             const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
-            if (old2) {
-              const next = old2.nextSibling;
-              old2.remove();
-              const tmp = document.createElement('div');
-              putMsg(tmp, ch.doc.data(), ch.doc.id);
-              area.insertBefore(tmp.firstElementChild, next);
-            }
+            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id,getRef); area.insertBefore(tmp.firstElementChild,next); }
           }
         });
       }
@@ -806,7 +801,7 @@ async function openBulletin() {
   ).catch(()=>{});
 
   el('backBtn').classList.remove('hidden');
-  el('hdrT').textContent = '📋 掲示板';
+  el('hdrT').textContent = '📋';
   el('hdrS').textContent = '全スタッフ共有';
   el('hdrAct').innerHTML = '';
   el('niBb').classList.add('on');
@@ -818,18 +813,19 @@ async function openBulletin() {
   area.innerHTML = '<div class="sys">読み込み中…</div>';
   let first = true;
   if (unsubMsg) { unsubMsg(); unsubMsg=null; }
-  unsubMsg = db.collection('bulletin').doc(BB_ID)
-    .collection('messages').orderBy('timestamp','asc').limitToLast(100)
+  const bbCol = db.collection('bulletin').doc(BB_ID).collection('messages');
+  const getRef = msgId => bbCol.doc(msgId);
+  unsubMsg = bbCol.orderBy('timestamp','asc').limitToLast(100)
     .onSnapshot(snap=>{
       if (first) {
         first=false; area.innerHTML='';
-        if (snap.empty) { area.innerHTML='<div class="sys">📋 掲示板へようこそ。最初のメッセージを投稿してください</div>'; }
-        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id)); scrollEnd(); }
+        if (snap.empty) { area.innerHTML='<div class="sys">チャットアプリ関連の情報を共有する掲示板です</div>'; }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id,getRef)); scrollEnd(); }
       } else {
         snap.docChanges().forEach(ch=>{
           if (ch.type==='added') {
             area.querySelector('.sys')?.remove();
-            putMsg(area,ch.doc.data(),ch.doc.id);
+            putMsg(area,ch.doc.data(),ch.doc.id,getRef);
             if (ch.doc.data().userId!==myId) { beep(); markReadMsg(ch.doc.ref); }
             scrollEnd();
           }
@@ -838,7 +834,7 @@ async function openBulletin() {
           }
           if (ch.type==='modified') {
             const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
-            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id); area.insertBefore(tmp.firstElementChild,next); }
+            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id,getRef); area.insertBefore(tmp.firstElementChild,next); }
           }
         });
       }
@@ -849,35 +845,35 @@ function loadMsgs(id) {
   const area = el('msgs');
   area.innerHTML='<div class="sys">読み込み中…</div>';
   let first=true;
-  unsubMsg = db.collection('channels').doc(id)
-    .collection('messages').orderBy('timestamp','asc').limitToLast(100)
+  const col = db.collection('channels').doc(id).collection('messages');
+  const getRef = msgId => col.doc(msgId);
+  unsubMsg = col.orderBy('timestamp','asc').limitToLast(100)
     .onSnapshot(snap=>{
       if (first) {
         first=false; area.innerHTML='';
         if (snap.empty) { area.innerHTML='<div class="sys">👋 最初のメッセージを送ってみましょう</div>'; }
-        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id)); scrollEnd(); }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id,getRef)); scrollEnd(); }
       } else {
         snap.docChanges().forEach(ch=>{
           if (ch.type==='added') {
             area.querySelector('.sys')?.remove();
-            putMsg(area,ch.doc.data(),ch.doc.id);
-            if (ch.doc.data().userId!==myId) {
-              beep();
-              markReadMsg(ch.doc.ref); // 既読をFirestoreに書き込む
-            }
+            putMsg(area,ch.doc.data(),ch.doc.id,getRef);
+            if (ch.doc.data().userId!==myId) { beep(); markReadMsg(ch.doc.ref); }
             scrollEnd();
           }
+          if (ch.type==='removed') {
+            area.querySelector(`[data-id="${ch.doc.id}"]`)?.remove();
+          }
           if (ch.type==='modified') {
-            // 既読数更新：バブルを差し替え
             const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
-            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id); area.insertBefore(tmp.firstElementChild,next); }
+            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id,getRef); area.insertBefore(tmp.firstElementChild,next); }
           }
         });
       }
     });
 }
 
-function putMsg(area,data,id) {
+function putMsg(area, data, id, getRef) {
   const me = data.userId===myId;
   const t  = data.timestamp?.toDate ? fmtT(data.timestamp.toDate()) : '';
   const readers = data.readBy ? Object.keys(data.readBy).length : 0;
@@ -890,11 +886,16 @@ function putMsg(area,data,id) {
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
-  // 自分のメッセージは長押しで削除メニュー
-  if (me) {
+  // 自分のメッセージは長押しで削除（getRefで参照を確定）
+  if (me && getRef) {
     let pressTimer = null;
-    const startPress = () => { pressTimer = setTimeout(()=>showDeleteMenu(d,id), 600); };
-    const cancelPress = () => { clearTimeout(pressTimer); };
+    const startPress = (e) => {
+      pressTimer = setTimeout(() => {
+        const ref = getRef(id);
+        if (ref) showDeleteMenu(d, ref);
+      }, 600);
+    };
+    const cancelPress = () => clearTimeout(pressTimer);
     d.addEventListener('touchstart', startPress, {passive:true});
     d.addEventListener('touchend',   cancelPress);
     d.addEventListener('touchmove',  cancelPress, {passive:true});
@@ -905,35 +906,32 @@ function putMsg(area,data,id) {
   area.appendChild(d);
 }
 
-function showDeleteMenu(el, msgId) {
-  // 既存メニューがあれば閉じる
+function showDeleteMenu(bubbleEl, docRef) {
   document.querySelector('.del-menu')?.remove();
   const menu = document.createElement('div');
   menu.className = 'del-menu';
   menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
-  menu.innerHTML = `<div style="background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;">
-    <div style="font-size:14px;color:#6B7280;margin-bottom:14px;">このメッセージを削除しますか？</div>
-    <button onclick="deleteMsg('${msgId}')" style="display:block;width:100%;padding:11px;background:#EF4444;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;">削除する</button>
-    <button onclick="this.closest('.del-menu').remove()" style="display:block;width:100%;padding:11px;background:#F1F5F9;color:#6B7280;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;">キャンセル</button>
-  </div>`;
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '削除する';
+  delBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#EF4444;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;';
+  delBtn.onclick = async () => {
+    menu.remove();
+    try { await docRef.delete(); toast('🗑️ 削除しました'); }
+    catch(e) { toast('⚠️ 削除に失敗しました'); }
+  };
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#F1F5F9;color:#6B7280;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;';
+  cancelBtn.onclick = () => menu.remove();
+  const box = document.createElement('div');
+  box.style.cssText = 'background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;';
+  const label = document.createElement('div');
+  label.textContent = 'このメッセージを削除しますか？';
+  label.style.cssText = 'font-size:14px;color:#6B7280;margin-bottom:14px;';
+  box.appendChild(label); box.appendChild(delBtn); box.appendChild(cancelBtn);
+  menu.appendChild(box);
   menu.addEventListener('click', e=>{ if(e.target===menu) menu.remove(); });
   document.body.appendChild(menu);
-}
-
-async function deleteMsg(msgId) {
-  document.querySelector('.del-menu')?.remove();
-  try {
-    let ref;
-    if (curDM) {
-      ref = db.collection('dms').doc(curDM.dmId).collection('messages').doc(msgId);
-    } else if (curCh) {
-      ref = db.collection('channels').doc(curCh.id).collection('messages').doc(msgId);
-    } else if (curBulletin) {
-      ref = db.collection('bulletin').doc('main').collection('messages').doc(msgId);
-    }
-    if (ref) await ref.delete();
-    toast('🗑️ 削除しました');
-  } catch(e) { toast('⚠️ 削除に失敗しました'); }
 }
 
 async function sendMsg() {
