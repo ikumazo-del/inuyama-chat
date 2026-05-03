@@ -191,7 +191,8 @@
                border:none; color:var(--pri); cursor:pointer; font-size:18px;
                display:flex; align-items:center; justify-content:center; flex-shrink:0; }
     .cam-btn:active { background:#BBDEFB; }
-    .b img { max-width:100%; border-radius:8px; display:block; cursor:pointer; }
+    .b img { max-width:100%; border-radius:8px; display:block; cursor:pointer;
+               -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 
     /* Bottom nav */
     .bnav { background: white; border-top: 1px solid var(--bdr);
@@ -886,10 +887,11 @@ function putMsg(area, data, id, getRef) {
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
-  // 自分のメッセージは長押しで削除（getRefで参照を確定）
+  // 自分のメッセージの削除
   if (me && getRef) {
+    // タッチ：長押し（ネイティブメニューより先に発火させる）
     let pressTimer = null;
-    const startPress = (e) => {
+    const startPress = () => {
       pressTimer = setTimeout(() => {
         const ref = getRef(id);
         if (ref) showDeleteMenu(d, ref);
@@ -899,20 +901,44 @@ function putMsg(area, data, id, getRef) {
     d.addEventListener('touchstart', startPress, {passive:true});
     d.addEventListener('touchend',   cancelPress);
     d.addEventListener('touchmove',  cancelPress, {passive:true});
-    d.addEventListener('mousedown',  startPress);
-    d.addEventListener('mouseup',    cancelPress);
-    d.addEventListener('mouseleave', cancelPress);
+    // 画像のネイティブメニューを抑制
+    d.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const ref = getRef(id);
+      if (ref) showDeleteMenu(d, ref);
+    });
   }
   area.appendChild(d);
 }
 
 function showDeleteMenu(bubbleEl, docRef) {
   document.querySelector('.del-menu')?.remove();
+  const imgEl = bubbleEl.querySelector('img');
   const menu = document.createElement('div');
   menu.className = 'del-menu';
   menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;';
+  const label = document.createElement('div');
+  label.textContent = imgEl ? '画像の操作' : 'このメッセージを削除しますか？';
+  label.style.cssText = 'font-size:14px;color:#6B7280;margin-bottom:14px;';
+  box.appendChild(label);
+  // 画像保存ボタン（画像メッセージのみ）
+  if (imgEl) {
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = '📥 画像を保存';
+    saveBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#1565C0;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;';
+    saveBtn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = imgEl.src;
+      a.download = 'image.jpg';
+      a.click();
+      menu.remove();
+    };
+    box.appendChild(saveBtn);
+  }
   const delBtn = document.createElement('button');
-  delBtn.textContent = '削除する';
+  delBtn.textContent = '🗑️ 削除する';
   delBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#EF4444;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;';
   delBtn.onclick = async () => {
     menu.remove();
@@ -923,12 +949,7 @@ function showDeleteMenu(bubbleEl, docRef) {
   cancelBtn.textContent = 'キャンセル';
   cancelBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#F1F5F9;color:#6B7280;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;';
   cancelBtn.onclick = () => menu.remove();
-  const box = document.createElement('div');
-  box.style.cssText = 'background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;';
-  const label = document.createElement('div');
-  label.textContent = 'このメッセージを削除しますか？';
-  label.style.cssText = 'font-size:14px;color:#6B7280;margin-bottom:14px;';
-  box.appendChild(label); box.appendChild(delBtn); box.appendChild(cancelBtn);
+  box.appendChild(cancelBtn); box.appendChild(delBtn);
   menu.appendChild(box);
   menu.addEventListener('click', e=>{ if(e.target===menu) menu.remove(); });
   document.body.appendChild(menu);
