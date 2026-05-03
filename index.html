@@ -888,7 +888,7 @@ function putMsg(area, data, id, getRef) {
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
   // 自分のメッセージの削除
-  if (me && getRef) {
+  if (getRef) {
     // タッチ：長押し（ネイティブメニューより先に発火させる）
     let pressTimer = null;
     const startPress = () => {
@@ -914,41 +914,57 @@ function putMsg(area, data, id, getRef) {
 function showDeleteMenu(bubbleEl, docRef) {
   document.querySelector('.del-menu')?.remove();
   const imgEl = bubbleEl.querySelector('img');
+  const textEl = bubbleEl.querySelector('.b');
   const menu = document.createElement('div');
   menu.className = 'del-menu';
   menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
   const box = document.createElement('div');
   box.style.cssText = 'background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;';
   const label = document.createElement('div');
-  label.textContent = imgEl ? '画像の操作' : 'このメッセージを削除しますか？';
+  label.textContent = imgEl ? '画像の操作' : 'メッセージの操作';
   label.style.cssText = 'font-size:14px;color:#6B7280;margin-bottom:14px;';
   box.appendChild(label);
-  // 画像保存ボタン（画像メッセージのみ）
+  const btnStyle = (bg, color) =>
+    `display:block;width:100%;padding:11px;background:${bg};color:${color};border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;`;
+  // 画像: 保存ボタン / テキスト: コピーボタン
   if (imgEl) {
     const saveBtn = document.createElement('button');
     saveBtn.textContent = '📥 画像を保存';
-    saveBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#1565C0;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;';
+    saveBtn.style.cssText = btnStyle('#1565C0', 'white');
     saveBtn.onclick = () => {
       const a = document.createElement('a');
-      a.href = imgEl.src;
-      a.download = 'image.jpg';
-      a.click();
+      a.href = imgEl.src; a.download = 'image.jpg'; a.click();
       menu.remove();
     };
     box.appendChild(saveBtn);
+  } else {
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = '🗒️ テキストをコピー';
+    copyBtn.style.cssText = btnStyle('#1565C0', 'white');
+    copyBtn.onclick = () => {
+      const text = textEl ? textEl.innerText : '';
+      navigator.clipboard.writeText(text).catch(()=>{
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); ta.remove();
+      });
+      toast('📋 コピーしました');
+      menu.remove();
+    };
+    box.appendChild(copyBtn);
   }
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.style.cssText = btnStyle('#F1F5F9', '#6B7280').replace('font-weight:700;','');
+  cancelBtn.onclick = () => menu.remove();
   const delBtn = document.createElement('button');
   delBtn.textContent = '🗑️ 削除する';
-  delBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#EF4444;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;';
+  delBtn.style.cssText = btnStyle('#EF4444', 'white');
   delBtn.onclick = async () => {
     menu.remove();
     try { await docRef.delete(); toast('🗑️ 削除しました'); }
     catch(e) { toast('⚠️ 削除に失敗しました'); }
   };
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'キャンセル';
-  cancelBtn.style.cssText = 'display:block;width:100%;padding:11px;background:#F1F5F9;color:#6B7280;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;';
-  cancelBtn.onclick = () => menu.remove();
   box.appendChild(cancelBtn); box.appendChild(delBtn);
   menu.appendChild(box);
   menu.addEventListener('click', e=>{ if(e.target===menu) menu.remove(); });
