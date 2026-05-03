@@ -187,6 +187,12 @@
             border: none; color: white; cursor: pointer;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .send:disabled { background: var(--bdr); }
+    .del-user-btn { background: #FEE2E2; border: none; color: var(--dng);
+                    border-radius: 7px; padding: 4px 9px; font-size: 12px;
+                    font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0; }
+    .del-user-btn:active { opacity: .75; }
+    .admin-key { background: none; border: none; font-size: 15px;
+                 cursor: pointer; padding: 2px 6px; color: var(--sub); }
     .cam-btn { width:36px; height:36px; border-radius:50%; background:var(--pri-lt);
                border:none; color:var(--pri); cursor:pointer; font-size:18px;
                display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -276,6 +282,35 @@
   </div>
 </div>
 
+<!-- 管理者パスワードモーダル -->
+<div id="adminModal" class="ov hidden">
+  <div class="card">
+    <div class="card-ic">🔑</div>
+    <div class="card-t" style="margin-bottom:8px;">管理者認証</div>
+    <div class="card-st">管理者パスワードを入力してください</div>
+    <input type="password" id="adminPwInput" placeholder="パスワード" maxlength="30" autocomplete="off">
+    <button class="btn btn-pri" onclick="checkAdminPw()">認証する</button>
+    <button class="btn btn-ghost" onclick="hide('adminModal')" style="margin-top:7px;">キャンセル</button>
+  </div>
+</div>
+
+<!-- ユーザー削除確認モーダル -->
+<div id="delUserModal" class="ov hidden">
+  <div class="card">
+    <div class="card-ic">⚠️</div>
+    <div class="card-t" style="color:#EF4444;margin-bottom:8px;">ユーザーを削除しますか？</div>
+    <div style="font-size:13px;color:#6B7280;text-align:center;margin-bottom:18px;line-height:1.7;">
+      削除前に重要な情報は保存してください。<br>
+      ・参加チャンネルからメンバー除名されます<br>
+      ・DMは削除されます<br>
+      ・チャンネル内の発言は(ghost)表示になります<br>
+      この操作は取り消せません。
+    </div>
+    <button class="btn" id="delUserConfirmBtn" onclick="execDeleteUser()" style="background:#EF4444;color:white;margin-bottom:7px;">削除する</button>
+    <button class="btn btn-ghost" onclick="hide('delUserModal')">キャンセル</button>
+  </div>
+</div>
+
 <!-- メンバーシート -->
 <div id="membersSheet" class="sheet-ov hidden">
   <div class="sheet">
@@ -323,7 +358,10 @@
 
     <!-- スタッフ -->
     <div id="vStaff" class="view">
-      <div class="sec">登録スタッフ</div>
+      <div class="sec" style="display:flex;align-items:center;justify-content:space-between;padding-right:10px;">
+        <span>登録スタッフ</span>
+        <button class="admin-key" onclick="openAdminAuth()" title="管理者モード">🔑</button>
+      </div>
       <div class="lst" id="lStaff"></div>
     </div>
 
@@ -645,10 +683,13 @@ function renderStaff() {
       </div>`;
     }
     const safeName = (u.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const delBtn = isAdmin
+      ? `<button class="del-user-btn" onclick="event.stopPropagation();confirmDeleteUser('${u.userId}','${safeName}')">🗑️</button>`
+      : '';
     return `<div class="row tap" onclick="openDM('${u.userId}','${safeName}')">
       <div class="row-ic">&#x1F464;</div>
       <div class="row-bd"><div class="row-n">${esc(u.name)}</div><div class="row-s">${chs||'未参加'} · タップしてDM</div></div>
-      <div class="row-rt"><span class="chev">›</span></div>
+      <div class="row-rt">${delBtn}<span class="chev">›</span></div>
     </div>`;
   }
 
@@ -950,10 +991,13 @@ function putMsg(area, data, id, getRef) {
   const readLabel = me && readers > 0 ? `<span class="read-label">既読 ${readers}</span>` : '';
   const d  = document.createElement('div');
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
+  // ghost判定：usersに存在しないIDは(ghost)付き表示
+  const isGhost = !users.find(u=>u.userId===data.userId);
+  const displayName = isGhost ? `${data.name}(ghost)` : data.name;
   const content = data.image
     ? `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`
     : linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
-  d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
+  d.innerHTML = `${!me?`<div class="b-sndr">${esc(displayName)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
   // 自分のメッセージの削除
@@ -1260,6 +1304,52 @@ function viewImg(imgEl) {
   document.body.appendChild(ov);
 }
 
+// ── 管理者機能 ────────────────────────────
+const ADMIN_PW = 'inuyamaAd2026';
+let isAdmin = false;
+let delTargetId = '';
+
+function openAdminAuth() {
+  if (isAdmin) { isAdmin=false; renderStaff(); toast('🔑 管理者モードを終了しました'); return; }
+  el('adminPwInput').value='';
+  show('adminModal');
+  setTimeout(()=>el('adminPwInput').focus(),250);
+}
+
+function checkAdminPw() {
+  if (el('adminPwInput').value === ADMIN_PW) {
+    isAdmin = true; hide('adminModal'); renderStaff(); toast('🔑 管理者モードです');
+  } else { toast('⚠️ パスワードが違います'); }
+}
+
+function confirmDeleteUser(uid, name) {
+  delTargetId = uid;
+  el('delUserConfirmBtn').textContent = `${name} を削除する`;
+  show('delUserModal');
+}
+
+async function execDeleteUser() {
+  hide('delUserModal');
+  if (!delTargetId) return;
+  const uid = delTargetId; delTargetId='';
+  try {
+    const batch = db.batch();
+    for (const c of channels.filter(x=>x.members[uid]))
+      batch.update(db.collection('channels').doc(c.id), {[`members.${uid}`]: FV.delete()});
+    batch.delete(db.collection('users').doc(uid));
+    await batch.commit();
+    const dmSnap = await db.collection('dms').where('participantIds','array-contains',uid).get();
+    for (const dm of dmSnap.docs) {
+      const msgs = await dm.ref.collection('messages').get();
+      const b2 = db.batch();
+      msgs.docs.forEach(m=>b2.delete(m.ref));
+      b2.delete(dm.ref);
+      await b2.commit();
+    }
+    toast('🗑️ ユーザーを削除しました');
+  } catch(e) { toast('⚠️ 削除に失敗しました'); }
+}
+
 // ── 既読管理 ──────────────────────────────
 function markRead(id) {
   lastRead[id] = Date.now();
@@ -1301,6 +1391,9 @@ el('deleteModal').addEventListener('click',e=>{ if(e.target===el('deleteModal'))
 el('chInput'  ).addEventListener('keydown',e=>{ if(e.key==='Enter') createCh(); });
 el('createModal' ).addEventListener('click',e=>{ if(e.target===el('createModal'))  closeCreate(); });
 el('membersSheet').addEventListener('click',e=>{ if(e.target===el('membersSheet')) closeSheet(); });
+el('adminModal').addEventListener('click',e=>{ if(e.target===el('adminModal')) hide('adminModal'); });
+el('adminPwInput').addEventListener('keydown',e=>{ if(e.key==='Enter') checkAdminPw(); });
+el('delUserModal').addEventListener('click',e=>{ if(e.target===el('delUserModal')) hide('delUserModal'); });
 
 // 最初のタップでAudioContextを初期化（iOS対応）
 document.addEventListener('touchstart', function _init() {
