@@ -929,11 +929,12 @@ function loadMsgs(id) {
     });
 }
 
-function linkify(text) {
+function linkify(text, linkColor) {
+  const col = linkColor || 'var(--pri)';
   const escaped = esc(text);
   return escaped.replace(
     /(https?:\/\/[^\s<>"']+)/g,
-    '<a href="$1" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--pri);text-decoration:underline;word-break:break-all;">$1</a>'
+    `<a href="$1" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:${col};text-decoration:underline;word-break:break-all;">$1</a>`
   );
 }
 
@@ -951,7 +952,7 @@ function putMsg(area, data, id, getRef) {
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
   const content = data.image
     ? `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`
-    : linkify(data.text||'');
+    : linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
