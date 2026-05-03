@@ -226,11 +226,12 @@
         <li>患者個人情報は絶対に流さない</li>
         <li>業務連絡の補助ツールに限定</li>
         <li>緊急時は正式な連絡手段を優先</li>
-        <li>正式採用までのパイロット運用</li>
+        <li>正式アプリ開始までのパイロット運用</li>
       </ul>
     </div>
-    <label class="lbl" for="nameInput">名前・役職（例：田中 看護師）</label>
-    <input type="text" id="nameInput" placeholder="山田 太郎" maxlength="20" autocomplete="off">
+    <label class="lbl" for="nameInput">職種　名前　（例：事務　田中）</label>
+    <input type="text" id="nameInput" placeholder="事務　田中" maxlength="20" autocomplete="off">
+    <div style="font-size:11px;color:#9CA3AF;text-align:right;margin:-6px 0 10px;">ログイン後変更できます</div>
     <button class="btn btn-pri" onclick="doSetup()">同意してはじめる</button>
   </div>
 </div>
@@ -451,6 +452,11 @@ function doSetup() {
   initAudio();
   const n = el('nameInput').value.trim();
   if (!n) { toast('名前を入力してください'); return; }
+  // 同名チェック（初回登録時・usersが読み込み済みの場合）
+  const dup = findDuplicateName(n, myId || '');
+  if (dup) {
+    if (!confirm(`「${dup.name}」が既に登録されています。\n同じ名前で続けますか？`)) return;
+  }
   if (!myId) {
     myId = 'u'+Date.now()+Math.random().toString(36).slice(2,5);
     localStorage.setItem('uid', myId);
@@ -473,8 +479,12 @@ function closeNameModal() { hide('nameModal'); }
 function saveName() {
   const n = el('nameChangeInput').value.trim();
   if (!n) { toast('名前を入力してください'); return; }
+  // 同名チェック（自分以外）
+  const dup = findDuplicateName(n, myId);
+  if (dup) {
+    if (!confirm(`「${dup.name}」が既に登録されています。\n同じ名前で続けますか？`)) return;
+  }
   myName = n; localStorage.setItem('uname', myName);
-  // myLblはnavで再生成されるが存在するときは更新
   const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
   upsertUser();
   channels.filter(c=>c.members[myId]).forEach(c=>{
@@ -487,6 +497,17 @@ function saveName() {
 function confirmDelete() {
   hide('nameModal');
   show('deleteModal');
+}
+
+// ── 名前の正規化（区切り文字を無視して同一人物判定）──
+function normalizeName(s) {
+  // 全角スペース・半角スペース・_・/・・・-・ーをすべて除去して比較
+  return s.replace(/[\s　_\/・\-ー]/g, '').toLowerCase();
+}
+
+function findDuplicateName(name, excludeId) {
+  const norm = normalizeName(name);
+  return users.find(u => u.userId !== excludeId && normalizeName(u.name) === norm);
 }
 
 function upsertUser() {
@@ -608,28 +629,56 @@ function renderAll() {
 }
 
 function renderStaff() {
-  // スタッフ
   const ds = el('lStaff');
   if (!users.length) {
     ds.innerHTML='<div class="empty"><div class="empty-tx">読み込み中…</div></div>';
-  } else {
-    ds.innerHTML = users.map(u=>{
-      const me = u.userId===myId;
-      const chs = channels.filter(c=>c.members[u.userId]).map(c=>esc(c.name)).join(' · ');
-      if (me) {
-        return `<div class="row">
-          <div class="row-ic me">🙋</div>
-          <div class="row-bd"><div class="row-n">${esc(u.name)} (自分)</div><div class="row-s">${chs||'未参加'}</div></div>
-        </div>`;
-      }
-      const safeName = (u.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      return `<div class="row tap" onclick="openDM('${u.userId}','${safeName}')">
-        <div class="row-ic">👤</div>
-        <div class="row-bd"><div class="row-n">${esc(u.name)}</div><div class="row-s">${chs||'未参加'} · タップしてDM</div></div>
-        <div class="row-rt"><span class="chev">›</span></div>
-      </div>`;
-    }).join('');
+    return;
   }
+
+  function userRow(u) {
+    const me = u.userId===myId;
+    const chs = channels.filter(c=>c.members[u.userId]).map(c=>esc(c.name)).join(' · ');
+    if (me) {
+      return `<div class="row">
+        <div class="row-ic me">&#x1F64B;</div>
+        <div class="row-bd"><div class="row-n">${esc(u.name)} (自分)</div><div class="row-s">${chs||'未参加'}</div></div>
+      </div>`;
+    }
+    const safeName = (u.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return `<div class="row tap" onclick="openDM('${u.userId}','${safeName}')">
+      <div class="row-ic">&#x1F464;</div>
+      <div class="row-bd"><div class="row-n">${esc(u.name)}</div><div class="row-s">${chs||'未参加'} · タップしてDM</div></div>
+      <div class="row-rt"><span class="chev">›</span></div>
+    </div>`;
+  }
+
+  function secLabel(text) {
+    return `<div style="padding:7px 14px 5px;font-size:11px;font-weight:700;color:var(--sub);letter-spacing:.5px;background:var(--bg);">${text}</div>`;
+  }
+
+  let html = '';
+
+  // 職種ソート（全員・重複あり）
+  function getRole(name) {
+    const m = (name||'').match(/^(.+?)[\s\u3000_\/\u30FB\-\u30FC]/);
+    return m ? m[1] : '\uFF3F';
+  }
+
+  const sorted = [...users].sort((a, b) => {
+    const ra = getRole(a.name), rb = getRole(b.name);
+    if (ra !== rb) return ra.localeCompare(rb, 'ja');
+    return (a.name||'').localeCompare(b.name||'', 'ja');
+  });
+
+  let lastRole = null;
+  sorted.forEach(u => {
+    const role = getRole(u.name);
+    const label = role === '\uFF3F' ? 'その他' : role;
+    if (label !== lastRole) { html += secLabel(label); lastRole = label; }
+    html += userRow(u);
+  });
+
+  ds.innerHTML = html;
 }
 
 // ── JOIN / LEAVE ─────────────────────────
@@ -660,7 +709,7 @@ async function leaveCh(id) {
       toast('退会しました');
     }
 
-    if (curCh?.id===id) goBack();
+    if (curCh?.id===id) { const ciBar=document.querySelector('.ci-bar'); if(ciBar) ciBar.style.display='none'; goBack(); }
   } catch(e) { toast('⚠️ 退会に失敗'); }
 }
 
@@ -766,6 +815,9 @@ function openChat(id) {
   ['My','All','Staff'].forEach(v=>el('v'+v).classList.remove('on'));
   el('vChat').classList.add('on');
   el('bnav').classList.add('hidden');
+  // 未参加なら入力欄を非表示
+  const ciBar = document.querySelector('.ci-bar');
+  if (ciBar) ciBar.style.display = mem ? '' : 'none';
   markRead(id);
   // 既存メッセージに既読を書き込む
   db.collection('channels').doc(id).collection('messages')
@@ -783,6 +835,9 @@ function openChat(id) {
 function goBack() {
   if (unsubMsg) { unsubMsg(); unsubMsg=null; }
   curCh=null; curDM=null; curBulletin=false;
+  // 入力欄を必ず表示に戻す
+  const ciBar = document.querySelector('.ci-bar');
+  if (ciBar) ciBar.style.display = '';
   el('vChat').classList.remove('on');
   el('bnav').classList.remove('hidden');
   el('backBtn').classList.add('hidden');
@@ -1098,7 +1153,7 @@ el('imgInput').addEventListener('change', async function() {
   const file = this.files[0];
   if (!file) return;
   this.value = '';
-  if (!curCh && !curDM) { toast('チャンネルまたはDMを開いてください'); return; }
+  if (!curCh && !curDM && !curBulletin) { toast('チャンネルまたはDMを開いてください'); return; }
   if (curCh && !channels.find(x=>x.id===curCh.id)?.members[myId]) {
     toast('送信には参加が必要です'); return;
   }
