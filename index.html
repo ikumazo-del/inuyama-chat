@@ -929,6 +929,19 @@ function loadMsgs(id) {
     });
 }
 
+function linkify(text) {
+  const escaped = esc(text);
+  return escaped.replace(
+    /(https?:\/\/[^\s<>"']+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--pri);text-decoration:underline;word-break:break-all;">$1</a>'
+  );
+}
+
+function extractUrl(el) {
+  const a = el.querySelector('a[href]');
+  return a ? a.href : null;
+}
+
 function putMsg(area, data, id, getRef) {
   const me = data.userId===myId;
   const t  = data.timestamp?.toDate ? fmtT(data.timestamp.toDate()) : '';
@@ -938,7 +951,7 @@ function putMsg(area, data, id, getRef) {
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
   const content = data.image
     ? `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`
-    : esc(data.text||'');
+    : linkify(data.text||'');
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(data.name)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
@@ -970,6 +983,7 @@ function showDeleteMenu(bubbleEl, docRef) {
   document.querySelector('.del-menu')?.remove();
   const imgEl = bubbleEl.querySelector('img');
   const textEl = bubbleEl.querySelector('.b');
+  const url = !imgEl ? extractUrl(bubbleEl) : null;
   const menu = document.createElement('div');
   menu.className = 'del-menu';
   menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
@@ -993,20 +1007,28 @@ function showDeleteMenu(bubbleEl, docRef) {
     };
     box.appendChild(saveBtn);
   } else {
-    const copyBtn = document.createElement('button');
-    copyBtn.textContent = '🗒️ テキストをコピー';
-    copyBtn.style.cssText = btnStyle('#1565C0', 'white');
-    copyBtn.onclick = () => {
-      const text = textEl ? textEl.innerText : '';
-      navigator.clipboard.writeText(text).catch(()=>{
-        const ta = document.createElement('textarea');
-        ta.value = text; document.body.appendChild(ta);
-        ta.select(); document.execCommand('copy'); ta.remove();
-      });
-      toast('📋 コピーしました');
-      menu.remove();
-    };
-    box.appendChild(copyBtn);
+    if (url) {
+      const openBtn = document.createElement('button');
+      openBtn.textContent = '🔗 開く';
+      openBtn.style.cssText = btnStyle('#1565C0', 'white');
+      openBtn.onclick = () => { window.open(url, '_blank', 'noopener,noreferrer'); menu.remove(); };
+      box.appendChild(openBtn);
+    } else {
+      const copyBtn = document.createElement('button');
+      copyBtn.textContent = '🗒️ テキストをコピー';
+      copyBtn.style.cssText = btnStyle('#1565C0', 'white');
+      copyBtn.onclick = () => {
+        const text = textEl ? textEl.innerText : '';
+        navigator.clipboard.writeText(text).catch(()=>{
+          const ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy'); ta.remove();
+        });
+        toast('📋 コピーしました');
+        menu.remove();
+      };
+      box.appendChild(copyBtn);
+    }
   }
   const cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'キャンセル';
