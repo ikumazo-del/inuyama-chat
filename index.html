@@ -875,7 +875,7 @@ function openChat(id) {
   el('hdrS').textContent = cnt+'人参加中';
   el('hdrAct').innerHTML = `
     <button class="hbtn" onclick="showMembers('${id}')">👥</button>
-    <button class="hbtn" onclick="renameCh('${id}')">✏️</button>
+    ${(mem || isAdmin) ? `<button class="hbtn" onclick="renameCh('${id}')">✏️</button>` : ''}
     ${mem ? `<button class="hbtn hbtn-d" onclick="leaveCh('${id}')">退会</button>`
           : `<button class="hbtn" onclick="joinCh('${id}')">参加する</button>`}`;
 
