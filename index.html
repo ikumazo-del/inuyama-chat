@@ -246,7 +246,7 @@
 <div id="nameModal" class="ov hidden">
   <div class="card">
     <div class="card-t" style="margin-bottom:14px;">👤 アカウント設定</div>
-    <label class="lbl" for="nameChangeInput">名前・役職</label>
+    <label class="lbl" for="nameChangeInput">職種　名前</label>
     <input type="text" id="nameChangeInput" maxlength="20" autocomplete="off">
     <div style="display:flex;gap:8px;margin-top:4px;">
       <button class="btn btn-ghost" onclick="closeNameModal()" style="flex:1;">キャンセル</button>
@@ -600,26 +600,11 @@ function startAll() {
       renderMy(); renderAll(); renderStaff();
       if (curCh) {
         const c=channels.find(x=>x.id===curCh.id);
-        if (c) {
-          el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
-          el('hdrT').textContent = c.name;
-          curCh.name = c.name;
-        }
+        if (c) el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
       }
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
-    .onSnapshot(snap=>{
-      users=snap.docs.map(d=>d.data());
-      renderStaff(); cleanGhostDMs();
-      // DM開中に相手が名前変更した場合ヘッダーを更新
-      if (curDM) {
-        const live = users.find(u=>u.userId===curDM.otherId);
-        if (live && live.name !== curDM.otherName) {
-          curDM.otherName = live.name;
-          el('hdrT').textContent = live.name;
-        }
-      }
-    });
+    .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); cleanGhostDMs(); });
 
   // DM listener（自分が参加しているDM）
   unsubDMs = db.collection('dms')
@@ -1031,9 +1016,8 @@ function putMsg(area, data, id, getRef) {
   const d  = document.createElement('div');
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
   // ghost判定：usersに存在しないIDは(ghost)付き表示
-  const liveUser = users.find(u=>u.userId===data.userId);
-  const isGhost = !liveUser;
-  const displayName = isGhost ? `${data.name}(ghost)` : liveUser.name;
+  const isGhost = !users.find(u=>u.userId===data.userId);
+  const displayName = isGhost ? `${data.name}(ghost)` : data.name;
   const content = data.image
     ? `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`
     : linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
