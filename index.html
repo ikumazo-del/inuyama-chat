@@ -678,9 +678,11 @@ function renderAll() {
     const cnt = Object.keys(c.members).length;
     const mem = !!c.members[myId];
     const isEm = c.name.includes('緊急');
+    const chName = mem ? esc(c.name) : esc(c.name) + ' 🔒';
+    const subTxt = mem ? `${cnt}人参加中 · ${esc(c.createdBy||'')}` : `${cnt}人 · ${esc(c.createdBy||'')}`;
     return `<div class="row tap" onclick="openChat('${c.id}')">
       <div class="row-ic ${isEm?'em':''}">#</div>
-      <div class="row-bd"><div class="row-n">${esc(c.name)}</div><div class="row-s">${cnt}人参加中 · ${esc(c.createdBy||'')}</div></div>
+      <div class="row-bd"><div class="row-n">${chName}</div><div class="row-s">${subTxt}</div></div>
       <div class="row-rt" onclick="event.stopPropagation()">
         ${mem ? `<button class="tag tag-l" onclick="leaveCh('${c.id}')">退会</button>`
               : `<button class="tag tag-j" onclick="joinCh('${c.id}')">参加</button>`}
@@ -884,17 +886,21 @@ function openChat(id) {
   const ciBar = document.querySelector('.ci-bar');
   if (ciBar) ciBar.style.display = mem ? '' : 'none';
   markRead(id);
-  // 既存メッセージに既読を書き込む
-  db.collection('channels').doc(id).collection('messages')
-    .orderBy('timestamp','desc').limit(50).get()
-    .then(snap => {
-      const batch = db.batch();
-      snap.docs.filter(d=>d.data().userId!==myId).forEach(d=>{
-        batch.set(d.ref,{readBy:{[myId]:true}},{merge:true});
+  if (mem) {
+    // 既存メッセージに既読を書き込む
+    db.collection('channels').doc(id).collection('messages')
+      .orderBy('timestamp','desc').limit(50).get()
+      .then(snap => {
+        const batch = db.batch();
+        snap.docs.filter(d=>d.data().userId!==myId).forEach(d=>{
+          batch.set(d.ref,{readBy:{[myId]:true}},{merge:true});
+        });
+        batch.commit().catch(()=>{});
       });
-      batch.commit().catch(()=>{});
-    });
-  loadMsgs(id);
+    loadMsgs(id);
+  } else {
+    el('msgs').innerHTML = '<div class="sys">🔒 参加メンバーのみ閲覧できます</div>';
+  }
 }
 
 function goBack() {
