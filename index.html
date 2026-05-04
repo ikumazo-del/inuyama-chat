@@ -214,6 +214,10 @@
     .ni-bb .ni-ic { font-size: 18px; }
     .ni-bb .ni-lb { display: none; }
     .ni-bb.on { opacity: 1; color: var(--pri); }
+    .bb-ic-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+    .bb-badge { position: absolute; top: -1px; right: -3px; width: 8px; height: 8px;
+                border-radius: 50%; background: #EF4444; border: 1.5px solid white; display: none; }
+    .bb-badge.on { display: block; }
 
     .hidden { display: none !important; }
   </style>
@@ -389,7 +393,7 @@
   </div>
 
   <nav class="bnav" id="bnav">
-    <button class="ni ni-bb" id="niBb" onclick="nav('bb')"><span class="ni-ic">ℹ️</span><span class="ni-lb">掲示板</span></button>
+    <button class="ni ni-bb" id="niBb" onclick="nav('bb')"><span class="bb-ic-wrap"><span class="ni-ic">ℹ️</span><span class="bb-badge" id="bbBadge"></span></span><span class="ni-lb">掲示板</span></button>
     <button class="ni on" id="niMy"    onclick="nav('my')"   ><span class="ni-ic">💬</span><span class="ni-lb">マイCH</span></button>
     <button class="ni"    id="niAll"   onclick="nav('all')"  ><span class="ni-ic">🔍</span><span class="ni-lb">チャンネル</span></button>
     <button class="ni"    id="niStaff" onclick="nav('staff')"><span class="ni-ic">👥</span><span class="ni-lb">スタッフ</span></button>
@@ -614,6 +618,39 @@ function startAll() {
         .sort((a,b)=>(b.lastAt?.seconds||0)-(a.lastAt?.seconds||0));
       renderMy();
     });
+
+  // 掲示板バッジ監視（新規・改編を常時監視）
+  startBulletinBadgeWatch();
+}
+
+// ── 掲示板バッジ制御 ──────────────────────────
+function getBbLastSeen() {
+  return parseInt(localStorage.getItem('bbLastSeen') || '0', 10);
+}
+function setBbLastSeen() {
+  localStorage.setItem('bbLastSeen', Date.now().toString());
+  el('bbBadge').classList.remove('on');
+}
+function showBbBadge() {
+  el('bbBadge').classList.add('on');
+}
+
+function startBulletinBadgeWatch() {
+  const bbCol = db.collection('bulletin').doc(BB_ID).collection('messages');
+  bbCol.onSnapshot(snap => {
+    if (curBulletin) return; // 掲示板を開いている間はバッジ不要
+    const lastSeen = getBbLastSeen();
+    let hasNew = false;
+    snap.docs.forEach(d => {
+      const data = d.data();
+      // 新規メッセージ：timestamp が lastSeen より新しい
+      const ts = data.timestamp?.toMillis ? data.timestamp.toMillis() : 0;
+      // 改編：editedAt が lastSeen より新しい
+      const ea = data.editedAt?.toMillis ? data.editedAt.toMillis() : 0;
+      if (ts > lastSeen || ea > lastSeen) hasNew = true;
+    });
+    if (hasNew) showBbBadge();
+  });
 }
 
 // ── RENDER ───────────────────────────────
@@ -916,6 +953,8 @@ const BB_ID = 'main';
 async function openBulletin() {
   initAudio();
   curBulletin = true; curCh = null; curDM = null;
+  // バッジ消灯・最終閲覧時刻を更新
+  setBbLastSeen();
   // 自分をメンバーとして登録（初回のみ）
   db.collection('bulletin').doc(BB_ID).set(
     { members: { [myId]: myName } }, { merge: true }
@@ -941,12 +980,12 @@ async function openBulletin() {
       if (first) {
         first=false; area.innerHTML='';
         if (snap.empty) { area.innerHTML='<div class="sys">チャットアプリ関連の情報を共有する掲示板です</div>'; }
-        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id,getRef,true)); scrollEnd(); }
+        else { snap.docs.forEach(d=>putMsg(area,d.data(),d.id,getRef)); scrollEnd(); }
       } else {
         snap.docChanges().forEach(ch=>{
           if (ch.type==='added') {
             area.querySelector('.sys')?.remove();
-            putMsg(area,ch.doc.data(),ch.doc.id,getRef,true);
+            putMsg(area,ch.doc.data(),ch.doc.id,getRef);
             if (ch.doc.data().userId!==myId) { beep(); markReadMsg(ch.doc.ref); }
             scrollEnd();
           }
@@ -955,7 +994,7 @@ async function openBulletin() {
           }
           if (ch.type==='modified') {
             const old2 = area.querySelector(`[data-id="${ch.doc.id}"]`);
-            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id,getRef,true); area.insertBefore(tmp.firstElementChild,next); }
+            if (old2) { const next=old2.nextSibling; old2.remove(); const tmp=document.createElement('div'); putMsg(tmp,ch.doc.data(),ch.doc.id,getRef); area.insertBefore(tmp.firstElementChild,next); }
           }
         });
       }
@@ -1008,12 +1047,9 @@ function extractUrl(el) {
   return a ? a.href : null;
 }
 
-function putMsg(area, data, id, getRef, isBulletin) {
+function putMsg(area, data, id, getRef) {
   const me = data.userId===myId;
-  // 時刻表示：編集済みなら「送信時刻 → 編集時刻(改編)」
-  const origT = data.timestamp?.toDate ? fmtT(data.timestamp.toDate()) : '';
-  const editT = data.editedAt?.toDate ? fmtT(data.editedAt.toDate()) : '';
-  const tDisplay = editT ? `${origT} → ${editT}(改編)` : origT;
+  const t  = data.timestamp?.toDate ? fmtT(data.timestamp.toDate()) : '';
   const readers = data.readBy ? Object.keys(data.readBy).length : 0;
   const readLabel = me && readers > 0 ? `<span class="read-label">既読 ${readers}</span>` : '';
   const d  = document.createElement('div');
@@ -1026,51 +1062,49 @@ function putMsg(area, data, id, getRef, isBulletin) {
     : linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(displayName)}</div>`:''}
     <div class="b">${content}</div>
-    <div class="b-t">${tDisplay}${readLabel}</div>`;
-  // 長押しメニュー
+    <div class="b-t">${t}${readLabel}</div>`;
+  // 自分のメッセージの削除
   if (getRef) {
+    // タッチ：長押し（ネイティブメニューより先に発火させる）
     let pressTimer = null;
     const startPress = () => {
       pressTimer = setTimeout(() => {
         const ref = getRef(id);
-        if (ref) showMsgMenu(d, ref, data, !!isBulletin);
+        if (ref) showDeleteMenu(d, ref);
       }, 600);
     };
     const cancelPress = () => clearTimeout(pressTimer);
     d.addEventListener('touchstart', startPress, {passive:true});
     d.addEventListener('touchend',   cancelPress);
     d.addEventListener('touchmove',  cancelPress, {passive:true});
+    // 画像のネイティブメニューを抑制
     d.addEventListener('contextmenu', e => {
       e.preventDefault();
       const ref = getRef(id);
-      if (ref) showMsgMenu(d, ref, data, !!isBulletin);
+      if (ref) showDeleteMenu(d, ref);
     });
   }
   area.appendChild(d);
 }
 
-function showMsgMenu(bubbleEl, docRef, data, isBulletin) {
+function showDeleteMenu(bubbleEl, docRef) {
   document.querySelector('.del-menu')?.remove();
-  const imgEl  = bubbleEl.querySelector('img');
+  const imgEl = bubbleEl.querySelector('img');
   const textEl = bubbleEl.querySelector('.b');
-  const url    = !imgEl ? extractUrl(bubbleEl) : null;
-
+  const url = !imgEl ? extractUrl(bubbleEl) : null;
   const menu = document.createElement('div');
   menu.className = 'del-menu';
   menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
   const box = document.createElement('div');
   box.style.cssText = 'background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;';
-
   const label = document.createElement('div');
   label.textContent = imgEl ? '画像の操作' : 'メッセージの操作';
   label.style.cssText = 'font-size:14px;color:#6B7280;margin-bottom:14px;';
   box.appendChild(label);
-
   const btnStyle = (bg, color) =>
     `display:block;width:100%;padding:11px;background:${bg};color:${color};border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;`;
-
+  // 画像: 保存ボタン / テキスト: コピーボタン
   if (imgEl) {
-    // ── 画像：保存ボタン ──
     const saveBtn = document.createElement('button');
     saveBtn.textContent = '📥 画像を保存';
     saveBtn.style.cssText = btnStyle('#1565C0', 'white');
@@ -1081,7 +1115,6 @@ function showMsgMenu(bubbleEl, docRef, data, isBulletin) {
     };
     box.appendChild(saveBtn);
   } else {
-    // ── テキスト / URL：コピー or 開く ──
     if (url) {
       const openBtn = document.createElement('button');
       openBtn.textContent = '🔗 開く';
@@ -1090,7 +1123,7 @@ function showMsgMenu(bubbleEl, docRef, data, isBulletin) {
       box.appendChild(openBtn);
     } else {
       const copyBtn = document.createElement('button');
-      copyBtn.textContent = '🗒️ コピー';
+      copyBtn.textContent = '🗒️ テキストをコピー';
       copyBtn.style.cssText = btnStyle('#1565C0', 'white');
       copyBtn.onclick = () => {
         const text = textEl ? textEl.innerText : '';
@@ -1104,88 +1137,23 @@ function showMsgMenu(bubbleEl, docRef, data, isBulletin) {
       };
       box.appendChild(copyBtn);
     }
-
-    // ── 管理者 × 掲示板のみ：編集ボタン ──
-    if (isAdmin && isBulletin && !imgEl) {
-      const editBtn = document.createElement('button');
-      editBtn.textContent = '✏️ 編集';
-      editBtn.style.cssText = btnStyle('#4CAF50', 'white');
-      editBtn.onclick = () => {
-        menu.remove();
-        showEditModal(docRef, data.text || '');
-      };
-      box.appendChild(editBtn);
-    }
   }
-
-  // ── キャンセル（全員） ──
   const cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'キャンセル';
   cancelBtn.style.cssText = btnStyle('#F1F5F9', '#6B7280').replace('font-weight:700;','');
   cancelBtn.onclick = () => menu.remove();
-  box.appendChild(cancelBtn);
-
-  // ── 削除（管理者のみ） ──
-  if (isAdmin) {
-    const delBtn = document.createElement('button');
-    delBtn.textContent = '🗑️ 削除する';
-    delBtn.style.cssText = btnStyle('#EF4444', 'white');
-    delBtn.onclick = async () => {
-      menu.remove();
-      try { await docRef.delete(); toast('🗑️ 削除しました'); }
-      catch(e) { toast('⚠️ 削除に失敗しました'); }
-    };
-    box.appendChild(delBtn);
-  }
-
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '🗑️ 削除する';
+  delBtn.style.cssText = btnStyle('#EF4444', 'white');
+  delBtn.onclick = async () => {
+    menu.remove();
+    try { await docRef.delete(); toast('🗑️ 削除しました'); }
+    catch(e) { toast('⚠️ 削除に失敗しました'); }
+  };
+  box.appendChild(cancelBtn); box.appendChild(delBtn);
   menu.appendChild(box);
   menu.addEventListener('click', e=>{ if(e.target===menu) menu.remove(); });
   document.body.appendChild(menu);
-}
-
-// ── 掲示板メッセージ編集モーダル ─────────────
-function showEditModal(docRef, currentText) {
-  document.querySelector('.edit-modal')?.remove();
-  const ov = document.createElement('div');
-  ov.className = 'edit-modal';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);padding:20px;';
-  const box = document.createElement('div');
-  box.style.cssText = 'background:white;border-radius:20px;padding:22px;width:100%;max-width:370px;';
-  box.innerHTML = `
-    <div style="font-size:15px;font-weight:700;color:#1565C0;text-align:center;margin-bottom:14px;">✏️ メッセージを編集</div>
-    <textarea id="editTextarea" style="width:100%;border:2px solid #E2E8F0;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;line-height:1.5;resize:none;min-height:90px;outline:none;box-sizing:border-box;">${esc(currentText)}</textarea>
-    <div id="editCharCount" style="font-size:11px;color:#9CA3AF;text-align:right;margin:4px 0 12px;"></div>
-    <div style="display:flex;gap:8px;">
-      <button id="editCancelBtn" style="flex:1;padding:12px;background:#F1F5F9;color:#6B7280;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;">キャンセル</button>
-      <button id="editSaveBtn"   style="flex:2;padding:12px;background:#1565C0;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;">保存する</button>
-    </div>`;
-  ov.appendChild(box);
-  document.body.appendChild(ov);
-
-  const ta    = ov.querySelector('#editTextarea');
-  const count = ov.querySelector('#editCharCount');
-  const updateCount = () => {
-    const len = ta.value.length;
-    count.textContent = `${len} / 500文字`;
-    count.style.color = len > 500 ? '#EF4444' : '#9CA3AF';
-  };
-  ta.addEventListener('input', updateCount);
-  updateCount();
-  // 末尾にカーソル
-  setTimeout(()=>{ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 100);
-
-  ov.querySelector('#editCancelBtn').onclick = () => ov.remove();
-  ov.querySelector('#editSaveBtn').onclick = async () => {
-    const newText = ta.value.trim();
-    if (!newText) { toast('テキストを入力してください'); return; }
-    if (newText.length > 500) { toast('500文字以内にしてください'); return; }
-    try {
-      await docRef.update({ text: newText, editedAt: firebase.firestore.FieldValue.serverTimestamp() });
-      toast('✅ 編集しました');
-      ov.remove();
-    } catch(e) { toast('⚠️ 編集に失敗しました'); }
-  };
-  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
 }
 
 async function sendMsg() {
