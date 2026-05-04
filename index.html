@@ -214,10 +214,6 @@
     .ni-bb .ni-ic { font-size: 18px; }
     .ni-bb .ni-lb { display: none; }
     .ni-bb.on { opacity: 1; color: var(--pri); }
-    .bb-ic-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; }
-    .bb-badge { position: absolute; top: -1px; right: -3px; width: 8px; height: 8px;
-                border-radius: 50%; background: #EF4444; border: 1.5px solid white; display: none; }
-    .bb-badge.on { display: block; }
 
     .hidden { display: none !important; }
   </style>
@@ -393,7 +389,7 @@
   </div>
 
   <nav class="bnav" id="bnav">
-    <button class="ni ni-bb" id="niBb" onclick="nav('bb')"><span class="bb-ic-wrap"><span class="ni-ic">ℹ️</span><span class="bb-badge" id="bbBadge"></span></span><span class="ni-lb">掲示板</span></button>
+    <button class="ni ni-bb" id="niBb" onclick="nav('bb')"><span class="ni-ic">ℹ️</span><span class="ni-lb">掲示板</span></button>
     <button class="ni on" id="niMy"    onclick="nav('my')"   ><span class="ni-ic">💬</span><span class="ni-lb">マイCH</span></button>
     <button class="ni"    id="niAll"   onclick="nav('all')"  ><span class="ni-ic">🔍</span><span class="ni-lb">チャンネル</span></button>
     <button class="ni"    id="niStaff" onclick="nav('staff')"><span class="ni-ic">👥</span><span class="ni-lb">スタッフ</span></button>
@@ -604,11 +600,26 @@ function startAll() {
       renderMy(); renderAll(); renderStaff();
       if (curCh) {
         const c=channels.find(x=>x.id===curCh.id);
-        if (c) el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
+        if (c) {
+          el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
+          el('hdrT').textContent = c.name;
+          curCh.name = c.name;
+        }
       }
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
-    .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); cleanGhostDMs(); });
+    .onSnapshot(snap=>{
+      users=snap.docs.map(d=>d.data());
+      renderStaff(); cleanGhostDMs();
+      // DM開中に相手が名前変更した場合ヘッダーを更新
+      if (curDM) {
+        const live = users.find(u=>u.userId===curDM.otherId);
+        if (live && live.name !== curDM.otherName) {
+          curDM.otherName = live.name;
+          el('hdrT').textContent = live.name;
+        }
+      }
+    });
 
   // DM listener（自分が参加しているDM）
   unsubDMs = db.collection('dms')
@@ -618,39 +629,6 @@ function startAll() {
         .sort((a,b)=>(b.lastAt?.seconds||0)-(a.lastAt?.seconds||0));
       renderMy();
     });
-
-  // 掲示板バッジ監視（新規・改編を常時監視）
-  startBulletinBadgeWatch();
-}
-
-// ── 掲示板バッジ制御 ──────────────────────────
-function getBbLastSeen() {
-  return parseInt(localStorage.getItem('bbLastSeen') || '0', 10);
-}
-function setBbLastSeen() {
-  localStorage.setItem('bbLastSeen', Date.now().toString());
-  el('bbBadge').classList.remove('on');
-}
-function showBbBadge() {
-  el('bbBadge').classList.add('on');
-}
-
-function startBulletinBadgeWatch() {
-  const bbCol = db.collection('bulletin').doc(BB_ID).collection('messages');
-  bbCol.onSnapshot(snap => {
-    if (curBulletin) return; // 掲示板を開いている間はバッジ不要
-    const lastSeen = getBbLastSeen();
-    let hasNew = false;
-    snap.docs.forEach(d => {
-      const data = d.data();
-      // 新規メッセージ：timestamp が lastSeen より新しい
-      const ts = data.timestamp?.toMillis ? data.timestamp.toMillis() : 0;
-      // 改編：editedAt が lastSeen より新しい
-      const ea = data.editedAt?.toMillis ? data.editedAt.toMillis() : 0;
-      if (ts > lastSeen || ea > lastSeen) hasNew = true;
-    });
-    if (hasNew) showBbBadge();
-  });
 }
 
 // ── RENDER ───────────────────────────────
@@ -953,8 +931,6 @@ const BB_ID = 'main';
 async function openBulletin() {
   initAudio();
   curBulletin = true; curCh = null; curDM = null;
-  // バッジ消灯・最終閲覧時刻を更新
-  setBbLastSeen();
   // 自分をメンバーとして登録（初回のみ）
   db.collection('bulletin').doc(BB_ID).set(
     { members: { [myId]: myName } }, { merge: true }
@@ -1055,8 +1031,9 @@ function putMsg(area, data, id, getRef) {
   const d  = document.createElement('div');
   d.className = `bw ${me?'me':'other'}`; d.dataset.id=id;
   // ghost判定：usersに存在しないIDは(ghost)付き表示
-  const isGhost = !users.find(u=>u.userId===data.userId);
-  const displayName = isGhost ? `${data.name}(ghost)` : data.name;
+  const liveUser = users.find(u=>u.userId===data.userId);
+  const isGhost = !liveUser;
+  const displayName = isGhost ? `${data.name}(ghost)` : liveUser.name;
   const content = data.image
     ? `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`
     : linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
