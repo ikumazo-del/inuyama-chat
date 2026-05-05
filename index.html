@@ -1108,8 +1108,12 @@ function putMsg(area, data, id, getRef) {
     content = `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`;
   } else if (data.file) {
     const f = data.file;
-    const faqBtn = f.faq
+    const faqBtn = (!me && f.faq)
       ? `<button class="file-faq-btn" onclick="onFaqBtn(event,'${esc(f.url)}','${esc(f.name)}')">🤖 FAQに追加</button>`
+      : '';
+    const dlBtn = !me
+      ? `<a class="file-dl-btn" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"
+           download="${esc(f.name)}" onclick="event.stopPropagation()">📥 ダウンロード</a>`
       : '';
     content = `<div class="file-bubble">
       <div class="file-info">
@@ -1119,11 +1123,7 @@ function putMsg(area, data, id, getRef) {
           <div class="file-size">${fmtFileSize(f.size)}</div>
         </div>
       </div>
-      <div class="file-actions">
-        <a class="file-dl-btn" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"
-           download="${esc(f.name)}" onclick="event.stopPropagation()">📥 ダウンロード</a>
-        ${faqBtn}
-      </div>
+      ${dlBtn || faqBtn ? `<div class="file-actions">${dlBtn}${faqBtn}</div>` : ''}
     </div>`;
   } else {
     content = linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
