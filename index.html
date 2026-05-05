@@ -1423,8 +1423,9 @@ async function uploadAndSendFile(file, mime, info) {
   const ref = storage.ref(`${pathPrefix}/${safeFileName}`);
 
   // アップロード
+  const contentType = mime.startsWith('text/') ? mime + '; charset=utf-8' : mime;
   const snap = await ref.put(file, {
-    contentType: mime,
+    contentType,
     customMetadata: { expireAt: expireAt.toISOString() }
   });
   const downloadURL = await snap.ref.getDownloadURL();
