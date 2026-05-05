@@ -424,7 +424,7 @@
       <div class="ci-bar">
         <input type="file" id="imgInput" accept="image/*" style="display:none">
         <input type="file" id="fileInput"
-          accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+          accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,text/plain,text/markdown,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
           style="display:none">
         <button class="cam-btn" id="camBtn" onclick="pickImage()" title="画像を送信">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1353,32 +1353,25 @@ async function requestNotify() {
 }
 
 // ── ファイル送信 ─────────────────────────
-const ALLOWED_FILE_TYPES = {
-  'application/pdf':                                              { ext:'.pdf', icon:'📄', faq:true  },
-  'text/plain':                                                   { ext:'.txt', icon:'📝', faq:true  },
-  'text/markdown':                                                { ext:'.md',  icon:'📝', faq:true  },
-  'application/msword':                                           { ext:'.doc', icon:'📘', faq:false },
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-                                                                  { ext:'.docx',icon:'📘', faq:false },
-  'application/vnd.ms-excel':                                     { ext:'.xls', icon:'📗', faq:false },
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-                                                                  { ext:'.xlsx',icon:'📗', faq:false },
-  'application/vnd.ms-powerpoint':                                { ext:'.ppt', icon:'📙', faq:false },
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                                                                  { ext:'.pptx',icon:'📙', faq:false },
+// 拡張子ベースで判定（iPhoneはMIMEが不定なため拡張子優先）
+const EXT_MAP = {
+  'pdf':  { mime:'application/pdf',           icon:'📄', faq:true  },
+  'txt':  { mime:'text/plain',                icon:'📝', faq:true  },
+  'md':   { mime:'text/markdown',             icon:'📝', faq:true  },
+  'doc':  { mime:'application/msword',        icon:'📘', faq:false },
+  'docx': { mime:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', icon:'📘', faq:false },
+  'xls':  { mime:'application/vnd.ms-excel',  icon:'📗', faq:false },
+  'xlsx': { mime:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',       icon:'📗', faq:false },
+  'ppt':  { mime:'application/vnd.ms-powerpoint', icon:'📙', faq:false },
+  'pptx': { mime:'application/vnd.openxmlformats-officedocument.presentationml.presentation', icon:'📙', faq:false },
 };
-// .md は MIME type が不定なので拡張子でも補正
+
+// 拡張子優先でファイルタイプを解決（iPhoneのMIME不定問題を回避）
 function resolveFileType(file) {
-  let mime = file.type;
-  if (!mime || mime === 'application/octet-stream') {
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (ext === 'md')   mime = 'text/markdown';
-    if (ext === 'txt')  mime = 'text/plain';
-    if (ext === 'docx') mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    if (ext === 'xlsx') mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    if (ext === 'pptx') mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-  }
-  return { mime, info: ALLOWED_FILE_TYPES[mime] || null };
+  const ext = file.name.split('.').pop().toLowerCase();
+  const entry = EXT_MAP[ext];
+  if (entry) return { mime: entry.mime, info: { icon: entry.icon, faq: entry.faq } };
+  return { mime: file.type || 'application/octet-stream', info: null };
 }
 
 function fmtFileSize(bytes) {
