@@ -201,24 +201,25 @@
                -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 
     /* ── FILE BUBBLE ────────────────────── */
-    .file-bubble { display:flex; flex-direction:column; gap:3px; min-width:140px; }
-    .file-info { display:flex; align-items:center; gap:6px; }
-    .file-icon { font-size:16px; flex-shrink:0; }
+    .b:has(.file-bubble) { padding: 5px 8px; }
+    .file-bubble { display:flex; flex-direction:column; gap:2px; min-width:120px; }
+    .file-info { display:flex; align-items:center; gap:5px; }
+    .file-icon { font-size:14px; flex-shrink:0; line-height:1; }
     .file-meta { flex:1; min-width:0; }
     .file-name { font-size:12px; font-weight:600;
-                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .file-size { font-size:10px; opacity:.75; margin-top:1px; }
-    .file-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:2px; }
-    .file-dl-btn { padding:3px 8px; border:none; border-radius:6px;
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+    .file-size { font-size:10px; opacity:.75; line-height:1.2; }
+    .file-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:3px; }
+    .file-dl-btn { padding:2px 7px; border:none; border-radius:5px;
                    font-size:11px; font-weight:600; font-family:inherit;
-                   cursor:pointer; display:flex; align-items:center; gap:2px; }
+                   cursor:pointer; display:flex; align-items:center; gap:2px; line-height:1.4; }
     .bw.me .file-dl-btn {
       background:rgba(255,255,255,.25); color:white; }
     .bw.other .file-dl-btn {
       background:var(--pri-lt); color:var(--pri); }
-    .file-faq-btn { padding:3px 8px; border:none; border-radius:6px;
+    .file-faq-btn { padding:2px 7px; border:none; border-radius:5px;
                     font-size:11px; font-weight:600; font-family:inherit;
-                    cursor:pointer; display:flex; align-items:center; gap:2px; }
+                    cursor:pointer; display:flex; align-items:center; gap:2px; line-height:1.4; }
     .bw.me .file-faq-btn {
       background:rgba(255,255,255,.2); color:rgba(255,255,255,.9); }
     .bw.other .file-faq-btn {
