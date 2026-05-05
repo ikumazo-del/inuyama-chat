@@ -1086,7 +1086,10 @@ function linkify(text, linkColor) {
   const escaped = esc(text);
   return escaped.replace(
     /(https?:\/\/[^\s<>"']+)/g,
-    `<a href="$1" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:${col};text-decoration:underline;word-break:break-all;">$1</a>`
+    `<a href="$1" target="_blank" rel="noopener noreferrer"
+        onclick="event.stopPropagation()"
+        ontouchend="event.stopPropagation(); event.preventDefault(); window.open('$1','_blank','noopener,noreferrer');"
+        style="color:${col};text-decoration:underline;word-break:break-all;">$1</a>`
   );
 }
 
