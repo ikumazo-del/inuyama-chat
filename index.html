@@ -226,19 +226,48 @@
     <div class="card-ic">🏥</div>
     <div class="card-t">総合犬山中央病院 院内連絡</div>
     <div class="card-st">パイロット運用 — スタッフ専用</div>
-    <div class="rules-box">
-      <b>⚠️ 利用ルール（必読）</b>
-      <ul>
-        <li>患者個人情報は絶対に流さない</li>
-        <li>業務連絡の補助ツールに限定</li>
-        <li>緊急時は正式な連絡手段を優先</li>
-        <li>正式アプリ開始までのパイロット運用</li>
-      </ul>
+
+    <!-- ステップ1: iOS PWA案内 -->
+    <div id="setupStep1">
+      <div style="display:flex;gap:6px;margin:10px 0 14px;">
+        <div style="flex:1;height:3px;border-radius:2px;background:#1565C0;"></div>
+        <div style="flex:1;height:3px;border-radius:2px;background:#E2E8F0;"></div>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#1565C0;margin-bottom:10px;">ステップ 1／2　ホーム画面に追加</div>
+      <div style="background:#E3F2FD;border-radius:10px;padding:12px 14px;margin-bottom:10px;text-align:left;">
+        <div style="font-size:12px;font-weight:600;color:#0C447C;margin-bottom:8px;">📱 アプリとして使用してください！！</div>
+        <div style="font-size:12px;color:#185FA5;line-height:2.0;">
+          <span style="display:inline-block;width:20px;font-weight:600;">①</span>下の共有ボタン（□↑）をタップ<br>
+          <span style="display:inline-block;width:20px;font-weight:600;">②</span>「ホーム画面に追加」を選択<br>
+          <span style="display:inline-block;width:20px;font-weight:600;">③</span>ホーム画面のアイコンから起動
+        </div>
+      </div>
+      <div style="font-size:11px;color:#9CA3AF;margin-bottom:14px;">※ Safariのまま登録するとアカウントが重複します</div>
+      <button class="btn btn-pri" onclick="goSetupStep2()">ホーム画面に追加しました → 次へ</button>
     </div>
-    <label class="lbl" for="nameInput">職種　名前　（例：事務　田中）</label>
-    <input type="text" id="nameInput" placeholder="事務　田中" maxlength="20" autocomplete="off">
-    <div style="font-size:11px;color:#9CA3AF;text-align:right;margin:-6px 0 10px;">ログイン後変更できます</div>
-    <button class="btn btn-pri" onclick="doSetup()">同意してはじめる</button>
+
+    <!-- ステップ2: 利用ルール＋名前入力 -->
+    <div id="setupStep2" style="display:none;">
+      <div style="display:flex;gap:6px;margin:10px 0 14px;">
+        <div style="flex:1;height:3px;border-radius:2px;background:#1565C0;"></div>
+        <div style="flex:1;height:3px;border-radius:2px;background:#1565C0;"></div>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:#1565C0;margin-bottom:10px;">ステップ 2／2　はじめる</div>
+      <div class="rules-box">
+        <b>⚠️ 利用ルール（必読）</b>
+        <ul>
+          <li>患者個人情報は絶対に流さない</li>
+          <li>業務連絡の補助ツールに限定</li>
+          <li>緊急時は正式な連絡手段を優先</li>
+          <li>正式アプリ開始までのパイロット運用</li>
+        </ul>
+      </div>
+      <label class="lbl" for="nameInput">職種　名前　（例：事務　田中）</label>
+      <input type="text" id="nameInput" placeholder="事務　田中" maxlength="20" autocomplete="off">
+      <div style="font-size:11px;color:#9CA3AF;text-align:right;margin:-6px 0 10px;">ログイン後変更できます</div>
+      <button class="btn btn-pri" onclick="doSetup()">同意してはじめる</button>
+    </div>
+
   </div>
 </div>
 
@@ -477,12 +506,28 @@ function init() {
     navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(()=>{});
 
   if (!myId || !myName) {
-    setTimeout(()=>el('nameInput').focus(), 250);
+    // iOS Safari（非PWA）の場合はステップ1を表示
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.navigator.standalone === true;
+    if (isIOS && !isStandalone) {
+      el('setupStep1').style.display = '';
+      el('setupStep2').style.display = 'none';
+    } else {
+      el('setupStep1').style.display = 'none';
+      el('setupStep2').style.display = '';
+      setTimeout(()=>el('nameInput').focus(), 250);
+    }
   } else {
     el('myLbl').textContent = myName;
     hide('setupModal'); show('app');
     startAll();
   }
+}
+
+function goSetupStep2() {
+  el('setupStep1').style.display = 'none';
+  el('setupStep2').style.display = '';
+  setTimeout(()=>el('nameInput').focus(), 250);
 }
 
 // ── SETUP ────────────────────────────────
