@@ -243,6 +243,12 @@
 
     .hidden { display: none !important; }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (typeof pdfjsLib !== "undefined") {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+  </script>
 </head>
 <body>
 
@@ -1714,19 +1720,48 @@ async function onFaqBtn(event, url, name) {
   await notifyFaqToBot(url, name, dmId, myId);
 }
 
+// ファイルからテキストを抽出
+async function extractFileText(fileUrl, fileName) {
+  const ext = fileName.split('.').pop().toLowerCase();
+  if (ext === 'pdf') {
+    // PDF.jsでテキスト抽出
+    if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js未読み込み');
+    const res = await fetch(fileUrl);
+    const arrayBuf = await res.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+    let text = '';
+    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(' ') + '
+';
+    }
+    return text.slice(0, 8000);
+  } else {
+    // txt/md/その他はそのままfetch
+    const res = await fetch(fileUrl);
+    const text = await res.text();
+    return text.slice(0, 8000);
+  }
+}
+
 // ファイル要約をBotのDMに届ける
 async function notifyFaqToBot(fileUrl, fileName, dmId, userId) {
   toast('🤖 ごろまるが要約中…');
   try {
+    const fileText = await extractFileText(fileUrl, fileName);
     const res = await fetch(GOROMARU_WORKER + '/faq', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileUrl, fileName, dmId, userId })
+      body: JSON.stringify({ fileUrl, fileName, fileText, dmId, userId })
     });
     const data = await res.json();
     if (data.rateLimited) toast(data.error || '⚠️ 利用回数上限');
     else if (!res.ok) toast('⚠️ 要約失敗');
-  } catch(e) { toast('⚠️ ごろまるBot 接続失敗'); }
+  } catch(e) { 
+    console.error('notifyFaqToBot error:', e);
+    toast('⚠️ ごろまるBot 接続失敗'); 
+  }
 }
 
 el('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
