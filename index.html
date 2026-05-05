@@ -200,6 +200,30 @@
     .b img { max-width:100%; border-radius:8px; display:block; cursor:pointer;
                -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 
+    /* ── FILE BUBBLE ────────────────────── */
+    .file-bubble { display:flex; flex-direction:column; gap:5px; min-width:160px; }
+    .file-info { display:flex; align-items:center; gap:7px; }
+    .file-icon { font-size:22px; flex-shrink:0; }
+    .file-meta { flex:1; min-width:0; }
+    .file-name { font-size:13px; font-weight:600;
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .file-size { font-size:11px; opacity:.75; }
+    .file-actions { display:flex; gap:5px; flex-wrap:wrap; }
+    .file-dl-btn { padding:5px 10px; border:none; border-radius:7px;
+                   font-size:12px; font-weight:600; font-family:inherit;
+                   cursor:pointer; display:flex; align-items:center; gap:3px; }
+    .bw.me .file-dl-btn {
+      background:rgba(255,255,255,.25); color:white; }
+    .bw.other .file-dl-btn {
+      background:var(--pri-lt); color:var(--pri); }
+    .file-faq-btn { padding:5px 10px; border:none; border-radius:7px;
+                    font-size:12px; font-weight:600; font-family:inherit;
+                    cursor:pointer; display:flex; align-items:center; gap:3px; }
+    .bw.me .file-faq-btn {
+      background:rgba(255,255,255,.2); color:rgba(255,255,255,.9); }
+    .bw.other .file-faq-btn {
+      background:#E8F5E9; color:#2E7D32; }
+
     /* Bottom nav */
     .bnav { background: white; border-top: 1px solid var(--bdr);
             display: flex; padding-bottom: var(--sb); flex-shrink: 0; }
@@ -399,10 +423,18 @@
       <div class="msgs" id="msgs"><div class="sys">チャンネルを選択してください</div></div>
       <div class="ci-bar">
         <input type="file" id="imgInput" accept="image/*" style="display:none">
+        <input type="file" id="fileInput"
+          accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+          style="display:none">
         <button class="cam-btn" id="camBtn" onclick="pickImage()" title="画像を送信">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </button>
+        <button class="cam-btn" id="fileBtn" onclick="pickFile()" title="ファイルを送信">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49L12.67 3c2-2 4.95-1.56 6.36 0a4 4 0 0 1 0 5.66L10.12 17.5a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
           </svg>
         </button>
         <textarea id="chatInput" placeholder="メッセージを入力..." rows="1"
@@ -428,6 +460,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 
 <script>
@@ -441,6 +474,7 @@ firebase.initializeApp({
 });
 const db = firebase.firestore();
 const FV = firebase.firestore.FieldValue;
+const storage = firebase.storage();
 
 const VAPID_KEY = "BD8SW-JMISSBF7_yzIXmjiUk_atkFKyRWvFpdL_5ZDj_O8npI6ZXLolMz2V9xlEsCIYtlSjV0OKOQHvvxYXm7ps";
 let messaging = null;
@@ -1069,9 +1103,31 @@ function putMsg(area, data, id, getRef) {
   // ghost判定：usersに存在しないIDは(ghost)付き表示
   const isGhost = !users.find(u=>u.userId===data.userId);
   const displayName = isGhost ? `${data.name}(ghost)` : data.name;
-  const content = data.image
-    ? `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`
-    : linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
+  let content;
+  if (data.image) {
+    content = `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`;
+  } else if (data.file) {
+    const f = data.file;
+    const faqBtn = f.faq
+      ? `<button class="file-faq-btn" onclick="onFaqBtn(event,'${esc(f.url)}','${esc(f.name)}')">🤖 FAQに追加</button>`
+      : '';
+    content = `<div class="file-bubble">
+      <div class="file-info">
+        <span class="file-icon">${f.icon}</span>
+        <div class="file-meta">
+          <div class="file-name">${esc(f.name)}</div>
+          <div class="file-size">${fmtFileSize(f.size)}</div>
+        </div>
+      </div>
+      <div class="file-actions">
+        <a class="file-dl-btn" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"
+           download="${esc(f.name)}" onclick="event.stopPropagation()">📥 ダウンロード</a>
+        ${faqBtn}
+      </div>
+    </div>`;
+  } else {
+    content = linkify(data.text||'', me ? 'rgba(255,255,255,0.9)' : '#0B5394');
+  }
   d.innerHTML = `${!me?`<div class="b-sndr">${esc(displayName)}</div>`:''}
     <div class="b">${content}</div>
     <div class="b-t">${t}${readLabel}</div>`;
@@ -1102,20 +1158,21 @@ function putMsg(area, data, id, getRef) {
 function showDeleteMenu(bubbleEl, docRef) {
   document.querySelector('.del-menu')?.remove();
   const imgEl = bubbleEl.querySelector('img');
+  const fileBubble = bubbleEl.querySelector('.file-bubble');
   const textEl = bubbleEl.querySelector('.b');
-  const url = !imgEl ? extractUrl(bubbleEl) : null;
+  const url = !imgEl && !fileBubble ? extractUrl(bubbleEl) : null;
   const menu = document.createElement('div');
   menu.className = 'del-menu';
   menu.style.cssText = 'position:fixed;inset:0;z-index:800;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
   const box = document.createElement('div');
   box.style.cssText = 'background:white;border-radius:16px;padding:20px;min-width:200px;text-align:center;';
   const label = document.createElement('div');
-  label.textContent = imgEl ? '画像の操作' : 'メッセージの操作';
+  label.textContent = imgEl ? '画像の操作' : fileBubble ? 'ファイルの操作' : 'メッセージの操作';
   label.style.cssText = 'font-size:14px;color:#6B7280;margin-bottom:14px;';
   box.appendChild(label);
   const btnStyle = (bg, color) =>
     `display:block;width:100%;padding:11px;background:${bg};color:${color};border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;`;
-  // 画像: 保存ボタン / テキスト: コピーボタン
+  // 画像: 保存ボタン / ファイル: ダウンロードボタン / テキスト: コピーボタン
   if (imgEl) {
     const saveBtn = document.createElement('button');
     saveBtn.textContent = '📥 画像を保存';
@@ -1126,6 +1183,15 @@ function showDeleteMenu(bubbleEl, docRef) {
       menu.remove();
     };
     box.appendChild(saveBtn);
+  } else if (fileBubble) {
+    const dlLink = fileBubble.querySelector('.file-dl-btn');
+    if (dlLink) {
+      const dlBtn = document.createElement('button');
+      dlBtn.textContent = '📥 ダウンロード';
+      dlBtn.style.cssText = btnStyle('#1565C0', 'white');
+      dlBtn.onclick = () => { window.open(dlLink.href, '_blank', 'noopener,noreferrer'); menu.remove(); };
+      box.appendChild(dlBtn);
+    }
   } else {
     if (url) {
       const openBtn = document.createElement('button');
@@ -1286,7 +1352,131 @@ async function requestNotify() {
   } catch(e) { console.error(e); toast('通知設定でエラーが発生しました'); }
 }
 
-// ── 画像送信 ─────────────────────────────
+// ── ファイル送信 ─────────────────────────
+const ALLOWED_FILE_TYPES = {
+  'application/pdf':                                              { ext:'.pdf', icon:'📄', faq:true  },
+  'text/plain':                                                   { ext:'.txt', icon:'📝', faq:true  },
+  'text/markdown':                                                { ext:'.md',  icon:'📝', faq:true  },
+  'application/msword':                                           { ext:'.doc', icon:'📘', faq:false },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                                                                  { ext:'.docx',icon:'📘', faq:false },
+  'application/vnd.ms-excel':                                     { ext:'.xls', icon:'📗', faq:false },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                                                                  { ext:'.xlsx',icon:'📗', faq:false },
+  'application/vnd.ms-powerpoint':                                { ext:'.ppt', icon:'📙', faq:false },
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                                                                  { ext:'.pptx',icon:'📙', faq:false },
+};
+// .md は MIME type が不定なので拡張子でも補正
+function resolveFileType(file) {
+  let mime = file.type;
+  if (!mime || mime === 'application/octet-stream') {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'md')   mime = 'text/markdown';
+    if (ext === 'txt')  mime = 'text/plain';
+    if (ext === 'docx') mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (ext === 'xlsx') mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (ext === 'pptx') mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  }
+  return { mime, info: ALLOWED_FILE_TYPES[mime] || null };
+}
+
+function fmtFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1024/1024).toFixed(1) + ' MB';
+}
+
+function pickFile() {
+  el('fileInput').click();
+}
+
+el('fileInput').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  this.value = '';
+  if (!curCh && !curDM && !curBulletin) { toast('チャンネルまたはDMを開いてください'); return; }
+  if (curCh && !channels.find(x=>x.id===curCh.id)?.members[myId]) {
+    toast('送信には参加が必要です'); return;
+  }
+  const { mime, info } = resolveFileType(file);
+  if (!info) { toast('⚠️ この形式は送信できません\n（PDF / txt / md / Word / Excel / PPT のみ）'); return; }
+  if (file.size > 1 * 1024 * 1024) { toast('⚠️ 1MB以内のファイルのみ送信できます'); return; }
+  toast('📎 アップロード中…');
+  try {
+    await uploadAndSendFile(file, mime, info);
+  } catch(e) {
+    console.error(e);
+    toast('⚠️ ファイルの送信に失敗しました');
+  }
+});
+
+async function uploadAndSendFile(file, mime, info) {
+  const expireAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  // Storage パス決定
+  let pathPrefix;
+  if (curDM)       pathPrefix = `files/dms/${curDM.dmId}`;
+  else if (curBulletin) pathPrefix = `files/bulletin/${BB_ID}`;
+  else              pathPrefix = `files/channels/${curCh.id}`;
+
+  const safeFileName = Date.now() + '_' + file.name.replace(/[^\w.\-]/g, '_');
+  const ref = storage.ref(`${pathPrefix}/${safeFileName}`);
+
+  // アップロード
+  const snap = await ref.put(file, {
+    contentType: mime,
+    customMetadata: { expireAt: expireAt.toISOString() }
+  });
+  const downloadURL = await snap.ref.getDownloadURL();
+
+  const msgData = {
+    file: {
+      name: file.name,
+      size: file.size,
+      mime,
+      icon: info.icon,
+      faq:  info.faq,
+      url:  downloadURL,
+      storagePath: `${pathPrefix}/${safeFileName}`,
+    },
+    name: myName, userId: myId,
+    timestamp: FV.serverTimestamp(),
+    expireAt,
+  };
+
+  if (curDM) {
+    el('sendBtn').disabled = true;
+    try {
+      const batch = db.batch();
+      const dmRef = db.collection('dms').doc(curDM.dmId);
+      batch.set(dmRef.collection('messages').doc(), msgData);
+      batch.set(dmRef, {
+        participantIds: [myId, curDM.otherId],
+        participants: { [myId]: myName, [curDM.otherId]: curDM.otherName },
+        lastMsg: `📎 ${file.name}`, lastAt: FV.serverTimestamp(), lastUserId: myId
+      }, { merge: true });
+      await batch.commit();
+    } finally { el('sendBtn').disabled = false; }
+    return;
+  }
+  if (curBulletin) {
+    el('sendBtn').disabled = true;
+    try {
+      await db.collection('bulletin').doc(BB_ID).collection('messages').doc().set(msgData);
+    } finally { el('sendBtn').disabled = false; }
+    return;
+  }
+  if (!curCh) return;
+  el('sendBtn').disabled = true;
+  try {
+    const batch = db.batch();
+    batch.set(db.collection('channels').doc(curCh.id).collection('messages').doc(), msgData);
+    batch.update(db.collection('channels').doc(curCh.id),
+      { lastMsg: `📎 ${file.name}`, lastAt: FV.serverTimestamp(), lastUserId: myId });
+    await batch.commit();
+    toast('✅ ファイルを送信しました');
+  } finally { el('sendBtn').disabled = false; }
+}
 function pickImage() {
   el('imgInput').click();
 }
@@ -1472,6 +1662,12 @@ function beep() {
     beepAudio.currentTime = 0;
     beepAudio.play().catch(()=>{});
   } catch(e) {}
+}
+
+// ── FAQ化（Phase2で実装・現在はプレースホルダー）──
+function onFaqBtn(event, url, name) {
+  event.stopPropagation();
+  toast('🤖 FAQ機能は準備中です（Phase2で実装予定）');
 }
 
 el('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
