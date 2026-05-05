@@ -812,7 +812,23 @@ function renderStaff() {
     return m ? m[1] : '\uFF3F';
   }
 
-  const sorted = [...users].sort((a, b) => {
+  // ごろまるBotを先頭に固定
+  const bots    = users.filter(u => u.isBot);
+  const humans  = users.filter(u => !u.isBot);
+
+  if (bots.length) {
+    html += secLabel('🤖 AI アシスタント');
+    bots.forEach(u => {
+      const safeName = (u.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      html += `<div class="row tap" onclick="openDM('${u.userId}','${safeName}')">
+        <div class="row-ic">🤖</div>
+        <div class="row-bd"><div class="row-n">${esc(u.name)}</div><div class="row-s">話しかけてみてください · タップしてDM</div></div>
+        <div class="row-rt"><span class="chev">›</span></div>
+      </div>`;
+    });
+  }
+
+  const sorted = [...humans].sort((a, b) => {
     const ra = getRole(a.name), rb = getRole(b.name);
     if (ra !== rb) return ra.localeCompare(rb, 'ja');
     return (a.name||'').localeCompare(b.name||'', 'ja');
@@ -1114,7 +1130,7 @@ function putMsg(area, data, id, getRef) {
   } else if (data.file) {
     const f = data.file;
     const faqBtn = (!me && f.faq)
-      ? `<button class="file-faq-btn" onclick="onFaqBtn(event,'${esc(f.url)}','${esc(f.name)}')">🤖 FAQに追加</button>`
+      ? `<button class="file-faq-btn" onclick="onFaqBtn(event,'${esc(f.url)}','${esc(f.name)}')" title="ごろまるBotに要約してもらう">🤖</button>`
       : '';
     const dlBtn = !me
       ? `<a class="file-dl-btn" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"
@@ -1261,6 +1277,10 @@ async function sendMsg() {
         lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp(),lastUserId:myId
       },{merge:true});
       await batch.commit();
+      // ごろまるBotへのDMならWorkerに通知（チャット）
+      if (curDM.otherId === 'goromaru-bot') {
+        notifyGoromaru(null, myName, text, curDM.dmId, myId).catch(()=>{});
+      }
     } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
     finally { el('sendBtn').disabled=false; inp.focus(); }
     return;
@@ -1291,6 +1311,8 @@ async function sendMsg() {
     batch.update(db.collection('channels').doc(curCh.id),
       {lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp(),lastUserId:myId});
     await batch.commit();
+    // @ごろまる メンション検出 → Workerに通知
+    if (text.includes('@ごろまる')) { notifyGoromaru(curCh.id, myName, text).catch(()=>{}); }
   } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
   finally { el('sendBtn').disabled=false; inp.focus(); }
 }
@@ -1455,6 +1477,10 @@ async function uploadAndSendFile(file, mime, info) {
         lastMsg: `📎 ${file.name}`, lastAt: FV.serverTimestamp(), lastUserId: myId
       }, { merge: true });
       await batch.commit();
+      // ごろまるBotへのDMならファイル自動要約
+      if (curDM.otherId === 'goromaru-bot') {
+        notifyFaqToBot(file.url, file.name, curDM.dmId, myId).catch(()=>{});
+      }
     } finally { el('sendBtn').disabled = false; }
     return;
   }
@@ -1664,9 +1690,43 @@ function beep() {
 }
 
 // ── FAQ化（Phase2で実装・現在はプレースホルダー）──
-function onFaqBtn(event, url, name) {
+const GOROMARU_WORKER = 'https://inuyama-chat-bot.i-kumazo.workers.dev';
+
+// チャンネル・DM でのおしゃべり通知
+async function notifyGoromaru(channelId, senderName, message, dmId, userId) {
+  toast('🤖 ごろまる考え中…');
+  try {
+    const res = await fetch(GOROMARU_WORKER + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channelId, senderName, message, dmId, userId })
+    });
+    const data = await res.json();
+    if (data.rateLimited) toast(data.reply || '⚠️ 利用回数上限');
+  } catch(e) { toast('⚠️ ごろまるBot 接続失敗'); }
+}
+
+// 🤖ボタン → DMに遷移して要約
+async function onFaqBtn(event, url, name) {
   event.stopPropagation();
-  toast('🤖 FAQ機能は準備中です（Phase2で実装予定）');
+  openDM('goromaru-bot', '🤖 ごろまるBot');
+  const dmId = [myId, 'goromaru-bot'].sort().join('_');
+  await notifyFaqToBot(url, name, dmId, myId);
+}
+
+// ファイル要約をBotのDMに届ける
+async function notifyFaqToBot(fileUrl, fileName, dmId, userId) {
+  toast('🤖 ごろまるが要約中…');
+  try {
+    const res = await fetch(GOROMARU_WORKER + '/faq', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileUrl, fileName, dmId, userId })
+    });
+    const data = await res.json();
+    if (data.rateLimited) toast(data.error || '⚠️ 利用回数上限');
+    else if (!res.ok) toast('⚠️ 要約失敗');
+  } catch(e) { toast('⚠️ ごろまるBot 接続失敗'); }
 }
 
 el('nameInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doSetup(); });
