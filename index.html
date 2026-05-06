@@ -1718,7 +1718,7 @@ async function onFaqBtn(event, url, name) {
 
 // ファイル要約をBotのDMに届ける（WorkerがPDFを直接処理）
 async function notifyFaqToBot(fileUrl, fileName, dmId, userId) {
-  toast('🤖 ごろまるが要約中…');
+  toast('🤖 ごろまるが要約中…（少々お待ちください）');
   try {
     const res = await fetch(GOROMARU_WORKER + '/faq', {
       method: 'POST',
@@ -1726,9 +1726,15 @@ async function notifyFaqToBot(fileUrl, fileName, dmId, userId) {
       body: JSON.stringify({ fileUrl, fileName, dmId, userId })
     });
     const data = await res.json();
-    if (data.rateLimited) toast(data.error || '⚠️ 利用回数上限');
-    else if (!res.ok) toast('⚠️ 要約失敗');
+    if (data.rateLimited) {
+      toast(data.error || '⚠️ 利用回数上限');
+    } else if (!res.ok || !data.ok) {
+      console.error('FAQ Worker error:', data);
+      toast('⚠️ 要約失敗：' + (data.error || 'Worker エラー').slice(0, 50));
+    }
+    // 成功時はBotがDMに要約を書き込むので、こちらは何もしない（toastなし）
   } catch(e) {
+    console.error('notifyFaqToBot fetch error:', e);
     toast('⚠️ ごろまるBot 接続失敗');
   }
 }
