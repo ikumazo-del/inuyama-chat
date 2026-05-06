@@ -1481,7 +1481,7 @@ async function uploadAndSendFile(file, mime, info) {
       await batch.commit();
       // ごろまるBotへのDMならファイル自動要約
       if (curDM.otherId === 'goromaru-bot') {
-        notifyFaqToBot(file.url, file.name, curDM.dmId, myId).catch(()=>{});
+        notifyFaqToBot(downloadURL, file.name, curDM.dmId, myId).catch(()=>{});
       }
     } finally { el('sendBtn').disabled = false; }
     return;
