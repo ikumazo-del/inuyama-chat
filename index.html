@@ -1129,7 +1129,9 @@ function putMsg(area, data, id, getRef) {
     content = `<img src="${data.image}" alt="画像" onclick="viewImg(this)">`;
   } else if (data.file) {
     const f = data.file;
-    const faqBtn = (!me && f.faq)
+    const inBotDM = curDM && curDM.otherId === 'goromaru-bot';
+    const showFaqBtn = f.faq && (!me || inBotDM);
+    const faqBtn = showFaqBtn
       ? `<button class="file-faq-btn" onclick="onFaqBtn(event,'${esc(f.url)}','${esc(f.name)}')" title="ごろまるBotに要約してもらう">🤖</button>`
       : '';
     const dlBtn = !me
