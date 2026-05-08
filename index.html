@@ -394,7 +394,7 @@
     </div>
     <div class="hdr-act" id="hdrAct">
       <button class="hbtn" onclick="promptName()">👤 <span id="myLbl"></span></button>
-      <button class="hbtn" id="bellBtn" onclick="requestNotify()" title="通知を有効化">🔔</button>
+      <button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>
     </div>
   </div>
 
@@ -565,6 +565,7 @@ function init() {
     el('myLbl').textContent = myName;
     hide('setupModal'); show('app');
     startAll();
+    setBellIcon();
   }
 }
 
@@ -683,6 +684,7 @@ async function cleanGhostDMs() {
 function startAll() {
   upsertUser();
   cleanEmptyChannels();
+  updateBellBtn();
   unsubCh = db.collection('channels').orderBy('createdAt','asc')
     .onSnapshot(snap=>{
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
@@ -1025,7 +1027,9 @@ function goBack() {
   el('vChat').classList.remove('on');
   el('bnav').classList.remove('hidden');
   el('backBtn').classList.add('hidden');
-  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" onclick="requestNotify()">🔔</button>`;
+  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
+  updateBellBtn();
+  setBellIcon();
   nav(curView==='chat'||curView==='bb'?'my':curView);
 }
 
@@ -1381,7 +1385,9 @@ function nav(v) {
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
   const titles={my:'院内連絡ツール',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
-  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()" title="通知を有効化">🔔</button>`;
+  el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
+  updateBellBtn();
+  setBellIcon();
 }
 
 // ── UTILS ────────────────────────────────
@@ -1393,6 +1399,15 @@ function fmtT(d)     { const now=new Date(),t=d.toLocaleTimeString('ja-JP',{hour
 function esc(s)      { const d=document.createElement('div'); d.appendChild(document.createTextNode(String(s||''))); return d.innerHTML; }
 function toast(msg)  { const t=el('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2800); }
 // ── 通知許可 ──────────────────────────────
+// 2026.5.8 16:30 通知ボタンの状態を更新（🔕/🔔）
+function updateBellBtn() {
+  const btn = el('bellBtn');
+  if (!btn) return;
+  const isOn = Notification.permission === 'granted';
+  btn.textContent = isOn ? '🔔' : '🔕';
+  btn.title = isOn ? '通知オン' : '通知をオンにする';
+}
+
 // 2026.5.8 14:00 FCMトークン取得→Firestore tokens/{userId} に保存（プッシュ通知実装）
 // 2026.5.8 15:00 serviceWorkerRegistration を明示指定（iOS PWA必須）
 async function requestNotify() {
@@ -1420,6 +1435,7 @@ async function requestNotify() {
         }
       }
       toast('🔔 通知が有効になりました');
+      updateBellBtn();
     } else {
       toast('通知が許可されませんでした');
     }
