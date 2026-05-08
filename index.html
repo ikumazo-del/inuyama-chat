@@ -503,8 +503,6 @@ let bulletinLastAt = 0;
 let bulletinLastUserId = '';
 // 2026.5.8 通知オン/オフ状態（localStorageで永続化）
 let notifyEnabled = localStorage.getItem('notifyEnabled') !== 'false';
-// 2026.5.8 17:00 通知オン/オフ状態（Firestoreトークン有無で管理）
-let notifyEnabled = false;
 let curDM      = null;
 let myDMs      = [];
 let curBulletin = false;
@@ -555,9 +553,11 @@ function init() {
 
   if (!myId || !myName) {
     // iOS Safari（非PWA）の場合はステップ1を表示
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    // 2026.5.8 window.navigator.standalone はiOS Safariのみ boolean で定義される
+    // Mac/PC（Chrome等）では undefined → ステップ2へ直接スキップ
+    const isIOSSafari = typeof window.navigator.standalone !== 'undefined';
     const isStandalone = window.navigator.standalone === true;
-    if (isIOS && !isStandalone) {
+    if (isIOSSafari && !isStandalone) {
       el('setupStep1').style.display = '';
       el('setupStep2').style.display = 'none';
     } else {
@@ -569,7 +569,7 @@ function init() {
     el('myLbl').textContent = myName;
     hide('setupModal'); show('app');
     startAll();
-    setBellIcon();
+    updateBellBtn();
   }
 }
 
@@ -1037,7 +1037,7 @@ function goBack() {
   el('backBtn').classList.add('hidden');
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
   updateBellBtn();
-  setBellIcon();
+  updateBellBtn();
   nav(curView==='chat'||curView==='bb'?'my':curView);
 }
 
@@ -1395,7 +1395,7 @@ function nav(v) {
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
   updateBellBtn();
-  setBellIcon();
+  updateBellBtn();
 }
 
 // ── UTILS ────────────────────────────────
