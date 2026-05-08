@@ -232,7 +232,12 @@
     .ni { flex: 1; display: flex; flex-direction: column; align-items: center;
           justify-content: center; padding: 5px 0 3px;
           border: none; background: none; color: var(--sub);
-          font-family: inherit; cursor: pointer; gap: 2px; }
+          font-family: inherit; cursor: pointer; gap: 2px; position: relative; }
+    /* 2026.5.8 16:30 掲示板未読バッジ（ℹ️赤点） */
+    .ni-bb.has-new::after {
+      content: ''; position: absolute; top: 6px; right: calc(50% - 16px);
+      width: 9px; height: 9px; border-radius: 50%; background: #EF4444;
+    }
     .ni.on { color: var(--pri); }
     .ni-ic { font-size: 21px; }
     .ni-lb { font-size: 10px; }
@@ -493,6 +498,9 @@ let unsubCh  = null;
 let unsubMsg = null;
 let unsubUs  = null;
 let unsubDMs = null;
+let unsubBulletin = null;
+let bulletinLastAt = 0;
+let bulletinLastUserId = '';
 let curDM      = null;
 let myDMs      = [];
 let curBulletin = false;
@@ -686,6 +694,14 @@ function startAll() {
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
     .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); cleanGhostDMs(); });
+  // 2026.5.8 16:30 掲示板の未読バッジ（ℹ️赤点）監視
+  unsubBulletin = db.collection('bulletin').doc(BB_ID)
+    .onSnapshot(doc=>{
+      const data = doc.data() || {};
+      bulletinLastAt = data.lastAt?.seconds || 0;
+      bulletinLastUserId = data.lastUserId || '';
+      updateBulletinBadge();
+    });
 
   // DM listener（自分が参加しているDM）
   unsubDMs = db.collection('dms')
@@ -1019,6 +1035,8 @@ const BB_ID = 'main';
 async function openBulletin() {
   initAudio();
   curBulletin = true; curCh = null; curDM = null;
+  // 2026.5.8 16:30 掲示板を開いたら既読にする
+  markRead(BB_ID);
   // 自分をメンバーとして登録（初回のみ）
   db.collection('bulletin').doc(BB_ID).set(
     { members: { [myId]: myName } }, { merge: true }
@@ -1283,8 +1301,8 @@ async function sendMsg() {
       if (curDM.otherId === 'goromaru-bot') {
         notifyGoromaru(null, myName, text, curDM.dmId, myId).catch(()=>{});
       } else {
-        // 2026.5.8 14:00 DM送信時にプッシュ通知を送信（送信者を除く）
-        notifyPush(myName, myId, text).catch(()=>{});
+        // 2026.5.8 16:30 DM送信時はDM相手だけに通知
+        notifyPush(myName, myId, text, [curDM.otherId]).catch(()=>{});
       }
     } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
     finally { el('sendBtn').disabled=false; inp.focus(); }
@@ -1298,8 +1316,11 @@ async function sendMsg() {
     try {
       await db.collection('bulletin').doc(BB_ID).collection('messages').doc()
         .set({text,name:myName,userId:myId,timestamp:FV.serverTimestamp()});
-      // 2026.5.8 14:00 掲示板送信時にプッシュ通知を送信（送信者を除く）
-      notifyPush(myName, myId, text).catch(()=>{});
+      // 2026.5.8 16:30 掲示板はプッシュ通知なし、ℹ️赤点バッジのみ
+      await db.collection('bulletin').doc(BB_ID).set({
+        lastAt: FV.serverTimestamp(), lastUserId: myId
+      }, {merge:true});
+      markRead(BB_ID);
     } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
     finally { el('sendBtn').disabled=false; inp.focus(); }
     return;
@@ -1320,8 +1341,9 @@ async function sendMsg() {
     await batch.commit();
     // @ごろまる メンション検出 → Workerに通知
     if (text.includes('@ごろまる')) { notifyGoromaru(curCh.id, myName, text).catch(()=>{}); }
-    // 2026.5.8 14:00 チャンネル送信時にプッシュ通知を送信（送信者を除く）
-    notifyPush(myName, myId, text).catch(()=>{});
+    // 2026.5.8 16:30 チャンネルメンバーだけに通知
+    const memberIds = Object.keys(c.members);
+    notifyPush(myName, myId, text, memberIds).catch(()=>{});
   } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
   finally { el('sendBtn').disabled=false; inp.focus(); }
 }
@@ -1685,6 +1707,15 @@ function markRead(id) {
   lastRead[id] = Date.now();
   localStorage.setItem('lastRead', JSON.stringify(lastRead));
   renderMy();
+  // 2026.5.8 16:30 掲示板既読時はバッジ更新
+  if (id === BB_ID) updateBulletinBadge();
+}
+// 2026.5.8 16:30 掲示板未読バッジ更新
+function updateBulletinBadge() {
+  const myRead = (lastRead[BB_ID] || 0) / 1000;
+  const hasNew = bulletinLastAt > myRead && bulletinLastUserId !== myId;
+  const niBb = el('niBb');
+  if (niBb) niBb.classList.toggle('has-new', hasNew);
 }
 
 function markReadMsg(docRef) {
@@ -1736,13 +1767,14 @@ async function notifyGoromaru(channelId, senderName, message, dmId, userId) {
   } catch(e) { toast('⚠️ ごろまるBot 接続失敗'); }
 }
 
-// 2026.5.8 14:00 プッシュ通知を送信（送信者を除く全員）
-async function notifyPush(senderName, senderUserId, body) {
+// 2026.5.8 16:30 プッシュ通知を送信
+// recipients: 通知対象のuserId配列（送信者は自動的に除外される）
+async function notifyPush(senderName, senderUserId, body, recipients) {
   try {
     await fetch(GOROMARU_WORKER + '/notify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senderName, senderUserId, body })
+      body: JSON.stringify({ senderName, senderUserId, body, recipients })
     });
   } catch(e) { /* プッシュ通知失敗はサイレントに無視 */ }
 }
