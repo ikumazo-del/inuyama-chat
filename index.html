@@ -501,6 +501,10 @@ let unsubDMs = null;
 let unsubBulletin = null;
 let bulletinLastAt = 0;
 let bulletinLastUserId = '';
+// 2026.5.8 通知オン/オフ状態（localStorageで永続化）
+let notifyEnabled = localStorage.getItem('notifyEnabled') !== 'false';
+// 2026.5.8 17:00 通知オン/オフ状態（Firestoreトークン有無で管理）
+let notifyEnabled = false;
 let curDM      = null;
 let myDMs      = [];
 let curBulletin = false;
@@ -684,7 +688,11 @@ async function cleanGhostDMs() {
 function startAll() {
   upsertUser();
   cleanEmptyChannels();
-  updateBellBtn();
+  // 2026.5.8 17:00 Firestoreのトークン存在確認で通知状態を初期化
+  db.collection('tokens').doc(myId).get().then(doc => {
+    notifyEnabled = doc.exists;
+    updateBellBtn();
+  }).catch(() => updateBellBtn());
   unsubCh = db.collection('channels').orderBy('createdAt','asc')
     .onSnapshot(snap=>{
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
@@ -1399,44 +1407,77 @@ function fmtT(d)     { const now=new Date(),t=d.toLocaleTimeString('ja-JP',{hour
 function esc(s)      { const d=document.createElement('div'); d.appendChild(document.createTextNode(String(s||''))); return d.innerHTML; }
 function toast(msg)  { const t=el('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2800); }
 // ── 通知許可 ──────────────────────────────
-// 2026.5.8 16:30 通知ボタンの状態を更新（🔕/🔔）
+// 2026.5.8 17:00 通知ボタンの状態を更新（🔕/🔔）
+// notifyEnabled = Firestoreにトークンがあるかどうか
 function updateBellBtn() {
   const btn = el('bellBtn');
   if (!btn) return;
-  const isOn = Notification.permission === 'granted';
-  btn.textContent = isOn ? '🔔' : '🔕';
-  btn.title = isOn ? '通知オン' : '通知をオンにする';
+  btn.textContent = notifyEnabled ? '🔔' : '🔕';
+  btn.title = notifyEnabled ? '通知オン（タップでオフ）' : '通知をオンにする';
 }
 
 // 2026.5.8 14:00 FCMトークン取得→Firestore tokens/{userId} に保存（プッシュ通知実装）
 // 2026.5.8 15:00 serviceWorkerRegistration を明示指定（iOS PWA必須）
+// 2026.5.8 17:00 🔔タップでオフ確認→トークン削除→🔕に変わる
+// 2026.5.8 通知オン/オフ切り替え（🔔⇔🔕）
+// iOSはJSから許可取消不可のため「オフ」= Firestoreのトークン削除で実現
+// オン/オフ状態はlocalStorageで永続化
 async function requestNotify() {
   if (!('Notification' in window)) { toast('この端末は通知非対応です'); return; }
+
+  // 🔔 オン状態でタップ → オフにする
+  if (Notification.permission === 'granted' && notifyEnabled) {
+    if (!confirm('通知をオフにしますか？')) return;
+    try { if (myId) await db.collection('tokens').doc(myId).delete(); } catch(e) {}
+    notifyEnabled = false;
+    localStorage.setItem('notifyEnabled', 'false');
+    updateBellBtn();
+    toast('🔕 通知をオフにしました');
+    return;
+  }
+
+  // 🔕 オフ状態でタップ → オンにする
+  // すでにOS許可済み（一度許可してオフにした場合）→ トークン再登録だけでOK
   if (Notification.permission === 'granted') {
-    if (messaging && myId) {
-      try {
+    notifyEnabled = true;
+    localStorage.setItem('notifyEnabled', 'true');
+    try {
+      if (messaging && myId) {
         const swReg = await navigator.serviceWorker.ready;
         const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
         if (token) await db.collection('tokens').doc(myId).set({ token, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-        toast('✅ 通知はすでに有効です');
-      } catch(e) { toast('⚠️ ' + e.message.slice(0, 60)); }
-    }
+      }
+    } catch(e) {}
+    updateBellBtn();
+    toast('🔔 通知をオンにしました');
     return;
+  }
+
+  // まだOS許可ダイアログを出していない → ダイアログを出す
+  if (Notification.permission === 'denied') {
+    toast('⚠️ 設定アプリから通知を許可してください'); return;
   }
   try {
     const perm = await Notification.requestPermission();
     if (perm === 'granted') {
+      notifyEnabled = true;
+      localStorage.setItem('notifyEnabled', 'true');
       if (messaging && myId) {
         const swReg = await navigator.serviceWorker.ready;
         const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-        if (token) {
-          await db.collection('tokens').doc(myId).set({ token, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-          console.log('FCM token saved:', myId);
-        }
+        if (token) await db.collection('tokens').doc(myId).set({ token, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
       }
-      toast('🔔 通知が有効になりました');
       updateBellBtn();
+      toast('🔔 通知をオンにしました');
+      // 2026.5.8 初回許可時のみiPhone設定案内ダイアログを表示
+      setTimeout(() => alert(
+        '🔔 通知をオンにしました\n\n' +
+        'あわせてiPhoneの設定も確認してください：\n' +
+        '設定 → 通知 → 院内連絡 → 通知を許可 → オン'
+      ), 500);
     } else {
+      notifyEnabled = false;
+      localStorage.setItem('notifyEnabled', 'false');
       toast('通知が許可されませんでした');
     }
   } catch(e) { toast('⚠️ ' + e.message.slice(0, 60)); }
