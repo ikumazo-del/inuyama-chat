@@ -16,13 +16,12 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // バックグラウンドでメッセージ受信時
+// 2026.5.8 16:00 data-onlyメッセージ対応：dataフィールドから title/body を取得
 messaging.onBackgroundMessage(payload => {
-  const title = payload.notification?.title || '院内連絡';
-  const body  = payload.notification?.body  || '新しいメッセージがあります';
-
-  // 2026.5.8 16:00 tag をペイロードIDベースにして重複排除
-  // 同一メッセージが複数回届いても1回だけ表示される
+  const title = payload.data?.title || payload.notification?.title || '院内連絡';
+  const body  = payload.data?.body  || payload.notification?.body  || '新しいメッセージがあります';
   const msgTag = payload.messageId || ('msg-' + Date.now());
+
   self.registration.showNotification(title, {
     body,
     icon:    './icon-192.png',
