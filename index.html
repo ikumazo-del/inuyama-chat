@@ -1372,23 +1372,26 @@ function esc(s)      { const d=document.createElement('div'); d.appendChild(docu
 function toast(msg)  { const t=el('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2800); }
 // ── 通知許可 ──────────────────────────────
 // 2026.5.8 14:00 FCMトークン取得→Firestore tokens/{userId} に保存（プッシュ通知実装）
+// 2026.5.8 15:00 serviceWorkerRegistration を明示指定（iOS PWA必須）
 async function requestNotify() {
   if (!('Notification' in window)) { toast('この端末は通知非対応です'); return; }
   if (Notification.permission === 'granted') {
-    // すでに許可済みでもトークンを再保存（更新対応）
     if (messaging && myId) {
       try {
-        const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+        const swReg = await navigator.serviceWorker.ready;
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
         if (token) await db.collection('tokens').doc(myId).set({ token, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-      } catch(e) {}
+        toast('✅ 通知はすでに有効です');
+      } catch(e) { toast('⚠️ ' + e.message.slice(0, 60)); }
     }
-    toast('✅ 通知はすでに有効です'); return;
+    return;
   }
   try {
     const perm = await Notification.requestPermission();
     if (perm === 'granted') {
       if (messaging && myId) {
-        const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+        const swReg = await navigator.serviceWorker.ready;
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
         if (token) {
           await db.collection('tokens').doc(myId).set({ token, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
           console.log('FCM token saved:', myId);
@@ -1398,7 +1401,7 @@ async function requestNotify() {
     } else {
       toast('通知が許可されませんでした');
     }
-  } catch(e) { console.error(e); toast('通知設定でエラーが発生しました'); }
+  } catch(e) { toast('⚠️ ' + e.message.slice(0, 60)); }
 }
 
 // ── ファイル送信 ─────────────────────────
