@@ -173,6 +173,29 @@
     .read-label { font-size: 10px; color: #7B9CCF; font-weight:600; }
     .unread-dot { width:9px; height:9px; border-radius:50%; background:#EF4444; flex-shrink:0; }
     .sys  { text-align: center; font-size: 11px; color: var(--sub); padding: 6px 0; }
+    /* 2026.5.10 選択削除モード */
+    .sel-bar { display:flex; align-items:center; justify-content:space-between;
+               background:#FFF3E0; padding:8px 12px; gap:8px; flex-shrink:0; }
+    .sel-bar-info { font-size:13px; color:#E65100; font-weight:600; }
+    .sel-del-btn  { background:#EF4444; color:white; border:none; border-radius:8px;
+                    padding:6px 14px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer; }
+    .sel-cancel-btn { background:#F1F5F9; color:#6B7280; border:none; border-radius:8px;
+                      padding:6px 12px; font-size:13px; font-family:inherit; cursor:pointer; }
+    .sel-all-btn  { background:none; border:1px solid #E65100; color:#E65100; border-radius:8px;
+                    padding:5px 10px; font-size:12px; font-family:inherit; cursor:pointer; margin-left:auto; }
+    /* 全削除ボタン：押しにくい右上隅の小さいボタン */
+    .sel-delall-btn { background:none; border:none; color:rgba(239,68,68,0.4);
+                      font-size:11px; font-family:inherit; cursor:pointer; padding:2px 4px;
+                      position:absolute; right:4px; top:4px; }
+    .sel-bar-wrap { position:relative; }
+    /* チェックボックスラッパー */
+    .bw-sel { display:flex; align-items:center; gap:6px; width:100%; }
+    .bw-sel.me  { flex-direction:row-reverse; justify-content:flex-start; }
+    .bw-sel.other { flex-direction:row; }
+    .msg-chk { width:20px; height:20px; border-radius:50%; border:2px solid #CBD5E1;
+               background:white; cursor:pointer; flex-shrink:0; display:flex;
+               align-items:center; justify-content:center; font-size:12px; transition:.15s; }
+    .msg-chk.checked { background:#EF4444; border-color:#EF4444; color:white; }
 
     /* Chat input */
     .ci-bar { background: white; border-top: 1px solid var(--bdr);
@@ -505,6 +528,9 @@ let myName = localStorage.getItem('uname') || '';
 let curView= 'my';
 let curCh  = null;
 let channels = [];  // [{id,name,members:{uid:name},lastMsg,...}]
+// 2026.5.10 選択削除モード
+let selectMode = false;
+let selectedMsgIds = new Set();
 let users    = [];  // [{userId,name,lastSeen}]
 let unsubCh  = null;
 let unsubMsg = null;
@@ -945,7 +971,7 @@ function openDM(otherId, otherName) {
   el('backBtn').classList.remove('hidden');
   el('hdrT').textContent = otherName;
   el('hdrS').textContent = 'ダイレクトメッセージ';
-  el('hdrAct').innerHTML = '';
+  el('hdrAct').innerHTML = `<button class="hbtn" onclick="enterSelectMode()" title="メッセージを選択して削除">☑️</button>`;
 
   ['My','All','Staff'].forEach(v=>el('v'+v).classList.remove('on'));
   el('vChat').classList.add('on');
@@ -1015,6 +1041,7 @@ function openChat(id) {
   el('hdrAct').innerHTML = `
     <button class="hbtn" onclick="showMembers('${id}')">👥</button>
     ${(mem || isAdmin) ? `<button class="hbtn" onclick="renameCh('${id}')">✏️</button>` : ''}
+    ${mem ? `<button class="hbtn" onclick="enterSelectMode()" title="メッセージを選択して削除">☑️</button>` : ''}
     ${mem ? `<button class="hbtn hbtn-d" onclick="leaveCh('${id}')">退会</button>`
           : `<button class="hbtn" onclick="joinCh('${id}')">参加する</button>`}`;
 
@@ -1210,6 +1237,30 @@ function putMsg(area, data, id, getRef) {
     <div class="b-t">${t}${readLabel}</div>`;
   // 自分のメッセージの削除
   if (getRef) {
+    // 2026.5.10 選択モード時：チェックボックスラッパー追加（自分のメッセージのみ）
+    if (selectMode && me) {
+      const wrap = document.createElement('div');
+      wrap.className = 'bw-sel me';
+      const chk = document.createElement('div');
+      chk.className = 'msg-chk';
+      chk.dataset.msgid = id;
+      chk.onclick = () => {
+        if (selectedMsgIds.has(id)) {
+          selectedMsgIds.delete(id);
+          chk.classList.remove('checked');
+          chk.textContent = '';
+        } else {
+          selectedMsgIds.add(id);
+          chk.classList.add('checked');
+          chk.textContent = '✓';
+        }
+        updateSelBar();
+      };
+      wrap.appendChild(d);
+      wrap.appendChild(chk);
+      area.appendChild(wrap);
+      return;
+    }
     // タッチ：長押し（ネイティブメニューより先に発火させる）
     let pressTimer = null;
     const startPress = () => {
@@ -1230,6 +1281,119 @@ function putMsg(area, data, id, getRef) {
     });
   }
   area.appendChild(d);
+}
+
+// 2026.5.10 選択削除モード ─────────────────────────────
+function enterSelectMode() {
+  selectMode = true;
+  selectedMsgIds.clear();
+  // 選択バーを msgs の上に挿入
+  const msgsEl = el('msgs');
+  const bar = document.createElement('div');
+  bar.id = 'selBar';
+  bar.className = 'sel-bar sel-bar-wrap';
+  bar.innerHTML = `
+    <button class="sel-cancel-btn" onclick="exitSelectMode()">✕ キャンセル</button>
+    <span class="sel-bar-info" id="selCount">0件選択中</span>
+    <button class="sel-del-btn" id="selDelBtn" onclick="deleteSelected()" disabled
+            style="opacity:.4;cursor:default;">🗑️ 削除</button>
+    <button class="sel-delall-btn" id="selDelAllBtn" onclick="deleteAllMyMsgs()"
+            title="自分の投稿をすべて削除">全消去</button>`;
+  msgsEl.parentNode.insertBefore(bar, msgsEl);
+  // メッセージを再描画（チェックボックス付き）
+  reloadMsgs();
+}
+
+function exitSelectMode() {
+  selectMode = false;
+  selectedMsgIds.clear();
+  document.getElementById('selBar')?.remove();
+  reloadMsgs();
+}
+
+function updateSelBar() {
+  const n = selectedMsgIds.size;
+  const cnt = document.getElementById('selCount');
+  const btn = document.getElementById('selDelBtn');
+  if (cnt) cnt.textContent = `${n}件選択中`;
+  if (btn) {
+    btn.disabled = n === 0;
+    btn.style.opacity = n > 0 ? '1' : '.4';
+    btn.style.cursor  = n > 0 ? 'pointer' : 'default';
+  }
+}
+
+async function deleteSelected() {
+  if (selectedMsgIds.size === 0) return;
+  const ids = [...selectedMsgIds];
+  const n = ids.length;
+  const col = getMsgCol();
+  if (!col) return;
+  try {
+    const batch = db.batch();
+    ids.forEach(id => batch.delete(col.doc(id)));
+    await batch.commit();
+    toast(`🗑️ ${n}件削除しました`);
+    exitSelectMode();
+  } catch(e) { toast('⚠️ 削除に失敗しました'); }
+}
+
+async function deleteAllMyMsgs() {
+  // 全削除ダイアログ（キャンセルを左、全削除を右遠くに）
+  const col = getMsgCol();
+  if (!col) return;
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:white;border-radius:18px;padding:24px 20px;max-width:320px;width:100%;text-align:center;';
+  box.innerHTML = `
+    <div style="font-size:28px;margin-bottom:8px;">🗑️</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:8px;">自分の投稿を全削除しますか？</div>
+    <div style="font-size:13px;color:#6B7280;margin-bottom:22px;">この操作は取り消せません。<br>相手側からも消えます。</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      <button id="delAllCancelBtn"
+        style="padding:10px 18px;border:none;background:#F1F5F9;border-radius:10px;font-size:14px;cursor:pointer;font-family:inherit;">
+        キャンセル
+      </button>
+      <div style="flex:1;"></div>
+      <button id="delAllExecBtn"
+        style="padding:10px 14px;border:none;background:#EF4444;color:white;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">
+        🗑️ 全削除
+      </button>
+    </div>`;
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+  document.getElementById('delAllCancelBtn').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('delAllExecBtn').onclick = async () => {
+    modal.remove();
+    try {
+      const snap = await col.where('userId','==',myId).get();
+      if (snap.empty) { toast('削除する投稿がありません'); exitSelectMode(); return; }
+      // Firestoreは500件バッチ上限
+      const chunks = [];
+      for (let i = 0; i < snap.docs.length; i += 450)
+        chunks.push(snap.docs.slice(i, i + 450));
+      for (const chunk of chunks) {
+        const b = db.batch();
+        chunk.forEach(d => b.delete(d.ref));
+        await b.commit();
+      }
+      toast(`🗑️ ${snap.docs.length}件全削除しました`);
+      exitSelectMode();
+    } catch(e) { toast('⚠️ 削除に失敗しました'); }
+  };
+}
+
+function getMsgCol() {
+  if (curDM)       return db.collection('dms').doc(curDM.dmId).collection('messages');
+  if (curCh)       return db.collection('channels').doc(curCh.id).collection('messages');
+  return null;
+}
+
+function reloadMsgs() {
+  if (curDM)  { openDM(curDM.otherId, curDM.otherName); return; }
+  if (curCh)  { loadMsgs(curCh.id); return; }
 }
 
 function showDeleteMenu(bubbleEl, docRef) {
@@ -1325,8 +1489,10 @@ async function sendMsg() {
     try {
       const batch=db.batch();
       const dmRef=db.collection('dms').doc(curDM.dmId);
+      // 2026.5.10 TTL 90日：expireAt を付与（Firestoreが自動削除）
+      const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
       batch.set(dmRef.collection('messages').doc(),
-        {text,name:myName,userId:myId,timestamp:FV.serverTimestamp()});
+        {text,name:myName,userId:myId,timestamp:FV.serverTimestamp(),expireAt});
       batch.set(dmRef, {
         participantIds:[myId,curDM.otherId],
         participants:{[myId]:myName,[curDM.otherId]:curDM.otherName},
@@ -1370,8 +1536,10 @@ async function sendMsg() {
   el('sendBtn').disabled=true;
   try {
     const batch=db.batch();
+    // 2026.5.10 TTL 90日：expireAt を付与
+    const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
     batch.set(db.collection('channels').doc(curCh.id).collection('messages').doc(),
-      {text,name:myName,userId:myId,timestamp:FV.serverTimestamp()});
+      {text,name:myName,userId:myId,timestamp:FV.serverTimestamp(),expireAt});
     batch.update(db.collection('channels').doc(curCh.id),
       {lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp(),lastUserId:myId});
     await batch.commit();
