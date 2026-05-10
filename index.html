@@ -149,10 +149,13 @@
 
     /* Empty */
     .empty { display: flex; flex-direction: column; align-items: center;
-             justify-content: center; padding: 34px 20px;
-             color: var(--sub); gap: 7px; text-align: center; }
-    .empty-ic { font-size: 32px; }
+             justify-content: center; padding: 16px 20px;
+             color: var(--sub); gap: 6px; text-align: center; }
+    .empty-ic { font-size: 28px; }
     .empty-tx { font-size: 13px; line-height: 1.5; }
+    .empty-nav-btn { background: var(--pri-lt); color: var(--pri); border: none;
+                     border-radius: 8px; padding: 6px 14px; font-size: 13px;
+                     font-family: inherit; cursor: pointer; margin-top: 2px; }
 
     /* ── CHAT ───────────────────────────── */
     .msgs { flex: 1; overflow-y: auto; padding: 10px 12px;
@@ -426,7 +429,7 @@
     <!-- マイCH -->
     <div id="vMy" class="view on">
       <div class="lst" id="lMy">
-        <div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「チャンネル」タブからチャンネルを探してください</div></div>
+        <div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">現在未参加</div><button class="empty-nav-btn" onclick="nav('all')">🔍 チャンネル画面へ</button></div>
       </div>
     </div>
 
@@ -531,6 +534,8 @@ let channels = [];  // [{id,name,members:{uid:name},lastMsg,...}]
 // 2026.5.10 選択削除モード
 let selectMode = false;
 let selectedMsgIds = new Set();
+// 2026.5.10 メッセージ統計
+let totalMessages = 0;
 let users    = [];  // [{userId,name,lastSeen}]
 let unsubCh  = null;
 let unsubMsg = null;
@@ -675,6 +680,36 @@ function findDuplicateName(name, excludeId) {
   return users.find(u => u.userId !== excludeId && normalizeName(u.name) === norm);
 }
 
+// 2026.5.10 統計・ヘッダー更新 ──────────────────
+const STATS_DOC = () => db.collection('stats').doc('global');
+const MSG_LIMIT = 30000; // ☁️100%の基準
+
+function loadStats() {
+  STATS_DOC().get().then(doc => {
+    totalMessages = doc.exists ? (doc.data().totalMessages || 0) : 0;
+    updateHdrStats();
+  }).catch(() => { totalMessages = 0; updateHdrStats(); });
+}
+
+function incrementStats() {
+  STATS_DOC().set({ totalMessages: FV.increment(1) }, { merge: true }).catch(() => {});
+}
+
+function updateHdrStats() {
+  if (curCh || curDM || curBulletin) return; // チャット中は更新しない
+  const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
+  el('hdrT').textContent = '院内連絡ツール ver1.0';
+  el('hdrS').innerHTML =
+    `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
+    `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span>`;
+}
+
+function openIwaoKDM() {
+  const iwao = users.find(u => u.name === 'IwaoK');
+  if (!iwao) return; // なければ無反応・無トースト
+  openDM(iwao.userId, iwao.name);
+}
+
 function upsertUser() {
   db.collection('users').doc(myId).set(
     {userId:myId, name:myName, lastSeen:FV.serverTimestamp()}, {merge:true}
@@ -720,6 +755,7 @@ async function cleanGhostDMs() {
 // ── LISTENERS ────────────────────────────
 function startAll() {
   upsertUser();
+  loadStats(); // 2026.5.10 統計読み込み
   cleanEmptyChannels();
   // 2026.5.8 17:00 Firestoreのトークン存在確認で通知状態を初期化
   db.collection('tokens').doc(myId).get().then(doc => {
@@ -730,13 +766,14 @@ function startAll() {
     .onSnapshot(snap=>{
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
       renderMy(); renderAll(); renderStaff();
+      updateHdrStats(); // 2026.5.10
       if (curCh) {
         const c=channels.find(x=>x.id===curCh.id);
         if (c) el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
       }
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
-    .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); cleanGhostDMs(); });
+    .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); cleanGhostDMs(); updateHdrStats(); }); // 2026.5.10
   // 2026.5.8 16:30 掲示板の未読バッジ（ℹ️赤点）監視
   unsubBulletin = db.collection('bulletin').doc(BB_ID)
     .onSnapshot(doc=>{
@@ -779,7 +816,7 @@ function renderMy() {
       </div>`;
     }).join('');
   } else {
-    html += '<div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">まだ参加していません<br>「参加する」タブからチャンネルを探してください</div></div>';
+    html += '<div class="empty"><div class="empty-ic">💬</div><div class="empty-tx">現在未参加</div><button class="empty-nav-btn" onclick="nav(\'all\')">🔍 チャンネル画面へ</button></div>';
   }
 
   // DMセクション
@@ -1498,6 +1535,7 @@ async function sendMsg() {
         lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp(),lastUserId:myId
       },{merge:true});
       await batch.commit();
+      incrementStats(); // 2026.5.10
       // ごろまるBotへのDMならWorkerに通知（チャット）
       if (curDM.otherId === 'goromaru-bot') {
         notifyGoromaru(null, myName, text, curDM.dmId, myId).catch(()=>{});
@@ -1522,6 +1560,7 @@ async function sendMsg() {
         lastAt: FV.serverTimestamp(), lastUserId: myId
       }, {merge:true});
       markRead(BB_ID);
+      incrementStats(); // 2026.5.10
     } catch(e) { toast('⚠️ 送信失敗'); inp.value=text; }
     finally { el('sendBtn').disabled=false; inp.focus(); }
     return;
@@ -1542,6 +1581,7 @@ async function sendMsg() {
     batch.update(db.collection('channels').doc(curCh.id),
       {lastMsg:text.slice(0,30),lastAt:FV.serverTimestamp(),lastUserId:myId});
     await batch.commit();
+    incrementStats(); // 2026.5.10
     // @ごろまる メンション検出 → Workerに通知
     if (text.includes('@ごろまる')) { notifyGoromaru(curCh.id, myName, text).catch(()=>{}); }
     // 2026.5.8 16:30 チャンネルメンバーだけに通知
@@ -1582,8 +1622,9 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.0',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
+  if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
   updateBellBtn();
   updateBellBtn();
@@ -1853,6 +1894,7 @@ async function sendImage(dataUrl) {
         lastMsg: '📷 画像', lastAt: FV.serverTimestamp(), lastUserId: myId
       }, { merge: true });
       await batch.commit();
+      incrementStats(); // 2026.5.10
     } catch(e) { toast('⚠️ 送信失敗'); }
     finally { el('sendBtn').disabled = false; }
     return;
@@ -1861,6 +1903,7 @@ async function sendImage(dataUrl) {
     el('sendBtn').disabled = true;
     try {
       await db.collection('bulletin').doc(BB_ID).collection('messages').doc().set(msgData);
+      incrementStats(); // 2026.5.10
     } catch(e) { toast('⚠️ 送信失敗'); }
     finally { el('sendBtn').disabled = false; }
     return;
@@ -1873,6 +1916,7 @@ async function sendImage(dataUrl) {
     batch.update(db.collection('channels').doc(curCh.id),
       { lastMsg: '📷 画像', lastAt: FV.serverTimestamp(), lastUserId: myId });
     await batch.commit();
+    incrementStats(); // 2026.5.10
   } catch(e) { toast('⚠️ 送信失敗'); }
   finally { el('sendBtn').disabled = false; }
 }
