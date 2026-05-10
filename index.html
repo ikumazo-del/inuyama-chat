@@ -183,10 +183,10 @@
                       padding:6px 12px; font-size:13px; font-family:inherit; cursor:pointer; }
     .sel-all-btn  { background:none; border:1px solid #E65100; color:#E65100; border-radius:8px;
                     padding:5px 10px; font-size:12px; font-family:inherit; cursor:pointer; margin-left:auto; }
-    /* 全削除ボタン：押しにくい右上隅の小さいボタン */
-    .sel-delall-btn { background:none; border:none; color:rgba(239,68,68,0.4);
-                      font-size:11px; font-family:inherit; cursor:pointer; padding:2px 4px;
-                      position:absolute; right:4px; top:4px; }
+    /* 全消去ボタン：右端に配置、小さく・薄めで押しにくい */
+    .sel-delall-btn { background:none; border:1px solid rgba(239,68,68,0.35);
+                      color:rgba(239,68,68,0.5); font-size:11px; font-family:inherit;
+                      cursor:pointer; padding:4px 8px; border-radius:6px; flex-shrink:0; }
     .sel-bar-wrap { position:relative; }
     /* チェックボックスラッパー */
     .bw-sel { display:flex; align-items:center; gap:6px; width:100%; }
@@ -1237,30 +1237,6 @@ function putMsg(area, data, id, getRef) {
     <div class="b-t">${t}${readLabel}</div>`;
   // 自分のメッセージの削除
   if (getRef) {
-    // 2026.5.10 選択モード時：チェックボックスラッパー追加（自分のメッセージのみ）
-    if (selectMode && me) {
-      const wrap = document.createElement('div');
-      wrap.className = 'bw-sel me';
-      const chk = document.createElement('div');
-      chk.className = 'msg-chk';
-      chk.dataset.msgid = id;
-      chk.onclick = () => {
-        if (selectedMsgIds.has(id)) {
-          selectedMsgIds.delete(id);
-          chk.classList.remove('checked');
-          chk.textContent = '';
-        } else {
-          selectedMsgIds.add(id);
-          chk.classList.add('checked');
-          chk.textContent = '✓';
-        }
-        updateSelBar();
-      };
-      wrap.appendChild(d);
-      wrap.appendChild(chk);
-      area.appendChild(wrap);
-      return;
-    }
     // タッチ：長押し（ネイティブメニューより先に発火させる）
     let pressTimer = null;
     const startPress = () => {
@@ -1284,31 +1260,67 @@ function putMsg(area, data, id, getRef) {
 }
 
 // 2026.5.10 選択削除モード ─────────────────────────────
+// 2026.5.10 選択削除モード（改修版：DOM操作方式・重複防止）─────────
 function enterSelectMode() {
+  if (document.getElementById('selBar')) return; // 二重起動防止
+  if (!el('msgs').querySelector('.bw.me')) {
+    toast('削除できる自分の投稿がありません'); return;
+  }
   selectMode = true;
   selectedMsgIds.clear();
-  // 選択バーを msgs の上に挿入
   const msgsEl = el('msgs');
   const bar = document.createElement('div');
   bar.id = 'selBar';
-  bar.className = 'sel-bar sel-bar-wrap';
+  bar.className = 'sel-bar';
   bar.innerHTML = `
     <button class="sel-cancel-btn" onclick="exitSelectMode()">✕ キャンセル</button>
     <span class="sel-bar-info" id="selCount">0件選択中</span>
     <button class="sel-del-btn" id="selDelBtn" onclick="deleteSelected()" disabled
             style="opacity:.4;cursor:default;">🗑️ 削除</button>
-    <button class="sel-delall-btn" id="selDelAllBtn" onclick="deleteAllMyMsgs()"
-            title="自分の投稿をすべて削除">全消去</button>`;
+    <button class="sel-delall-btn" onclick="deleteAllMyMsgs()">全消去</button>`;
   msgsEl.parentNode.insertBefore(bar, msgsEl);
-  // メッセージを再描画（チェックボックス付き）
-  reloadMsgs();
+  addCheckboxesToDom();
 }
 
 function exitSelectMode() {
   selectMode = false;
   selectedMsgIds.clear();
   document.getElementById('selBar')?.remove();
-  reloadMsgs();
+  removeCheckboxesFromDom();
+}
+
+function addCheckboxesToDom() {
+  el('msgs').querySelectorAll('.bw.me[data-id]').forEach(bw => {
+    if (bw.parentNode.classList.contains('bw-sel')) return;
+    const id = bw.dataset.id;
+    const chk = document.createElement('div');
+    chk.className = 'msg-chk';
+    chk.onclick = () => {
+      if (selectedMsgIds.has(id)) {
+        selectedMsgIds.delete(id);
+        chk.classList.remove('checked');
+        chk.textContent = '';
+      } else {
+        selectedMsgIds.add(id);
+        chk.classList.add('checked');
+        chk.textContent = '✓';
+      }
+      updateSelBar();
+    };
+    const wrap = document.createElement('div');
+    wrap.className = 'bw-sel me';
+    bw.parentNode.insertBefore(wrap, bw);
+    wrap.appendChild(bw);
+    wrap.appendChild(chk);
+  });
+}
+
+function removeCheckboxesFromDom() {
+  el('msgs').querySelectorAll('.bw-sel').forEach(wrap => {
+    const bw = wrap.querySelector('.bw');
+    if (bw) wrap.parentNode.insertBefore(bw, wrap);
+    wrap.remove();
+  });
 }
 
 function updateSelBar() {
@@ -1326,20 +1338,18 @@ function updateSelBar() {
 async function deleteSelected() {
   if (selectedMsgIds.size === 0) return;
   const ids = [...selectedMsgIds];
-  const n = ids.length;
   const col = getMsgCol();
   if (!col) return;
   try {
     const batch = db.batch();
     ids.forEach(id => batch.delete(col.doc(id)));
     await batch.commit();
-    toast(`🗑️ ${n}件削除しました`);
+    toast(`🗑️ ${ids.length}件削除しました`);
     exitSelectMode();
   } catch(e) { toast('⚠️ 削除に失敗しました'); }
 }
 
 async function deleteAllMyMsgs() {
-  // 全削除ダイアログ（キャンセルを左、全削除を右遠くに）
   const col = getMsgCol();
   if (!col) return;
   const modal = document.createElement('div');
@@ -1370,7 +1380,6 @@ async function deleteAllMyMsgs() {
     try {
       const snap = await col.where('userId','==',myId).get();
       if (snap.empty) { toast('削除する投稿がありません'); exitSelectMode(); return; }
-      // Firestoreは500件バッチ上限
       const chunks = [];
       for (let i = 0; i < snap.docs.length; i += 450)
         chunks.push(snap.docs.slice(i, i + 450));
@@ -1386,14 +1395,9 @@ async function deleteAllMyMsgs() {
 }
 
 function getMsgCol() {
-  if (curDM)       return db.collection('dms').doc(curDM.dmId).collection('messages');
-  if (curCh)       return db.collection('channels').doc(curCh.id).collection('messages');
+  if (curDM) return db.collection('dms').doc(curDM.dmId).collection('messages');
+  if (curCh) return db.collection('channels').doc(curCh.id).collection('messages');
   return null;
-}
-
-function reloadMsgs() {
-  if (curDM)  { openDM(curDM.otherId, curDM.otherName); return; }
-  if (curCh)  { loadMsgs(curCh.id); return; }
 }
 
 function showDeleteMenu(bubbleEl, docRef) {
