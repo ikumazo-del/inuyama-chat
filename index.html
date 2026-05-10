@@ -622,11 +622,9 @@ function doSetup() {
   initAudio();
   const n = el('nameInput').value.trim();
   if (!n) { toast('名前を入力してください'); return; }
-  // 同名チェック（初回登録時・usersが読み込み済みの場合）
+  // 2026.5.10 同名チェック（完全ブロック）
   const dup = findDuplicateName(n, myId || '');
-  if (dup) {
-    if (!confirm(`「${dup.name}」が既に登録されています。\n同じ名前で続けますか？`)) return;
-  }
+  if (dup) { alert('この名前は既に使われています。別の表記（例：外科　田中太）で登録し、不要アカウントがあれば管理者へご連絡ください。'); return; }
   if (!myId) {
     myId = 'u'+Date.now()+Math.random().toString(36).slice(2,5);
     localStorage.setItem('uid', myId);
@@ -649,12 +647,9 @@ function closeNameModal() { hide('nameModal'); }
 function saveName() {
   const n = el('nameChangeInput').value.trim();
   if (!n) { toast('名前を入力してください'); return; }
-  // 同名チェック（自分以外）
+  // 2026.5.10 同名チェック（完全ブロック）
   const dup = findDuplicateName(n, myId);
-  if (dup) {
-    if (!confirm(`「${dup.name}」が既に登録されています。\n同じ名前で続けますか？`)) return;
-  }
-  myName = n; localStorage.setItem('uname', myName);
+  if (dup) { alert('この名前は既に使われています。別の表記（例：外科　田中太）で登録し、不要アカウントがあれば管理者へご連絡ください。'); return; }
   const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
   upsertUser();
   channels.filter(c=>c.members[myId]).forEach(c=>{
