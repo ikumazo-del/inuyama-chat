@@ -767,6 +767,7 @@ function startAll() {
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
       renderMy(); renderAll(); renderStaff();
       updateHdrStats(); // 2026.5.10
+      scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
       if (curCh) {
         const c=channels.find(x=>x.id===curCh.id);
         if (c) el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
@@ -781,6 +782,7 @@ function startAll() {
       bulletinLastAt = data.lastAt?.seconds || 0;
       bulletinLastUserId = data.lastUserId || '';
       updateBulletinBadge();
+      scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
     });
 
   // DM listener（自分が参加しているDM）
@@ -790,6 +792,7 @@ function startAll() {
       myDMs = snap.docs.map(d=>({id:d.id,...d.data()}))
         .sort((a,b)=>(b.lastAt?.seconds||0)-(a.lastAt?.seconds||0));
       renderMy();
+      scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
     });
 }
 
@@ -2001,6 +2004,7 @@ function markRead(id) {
   renderMy();
   // 2026.5.8 16:30 掲示板既読時はバッジ更新
   if (id === BB_ID) updateBulletinBadge();
+  scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新（既読化で減らす）
 }
 // 2026.5.8 16:30 掲示板未読バッジ更新
 function updateBulletinBadge() {
@@ -2008,6 +2012,122 @@ function updateBulletinBadge() {
   const hasNew = bulletinLastAt > myRead && bulletinLastUserId !== myId;
   const niBb = el('niBb');
   if (niBb) niBb.classList.toggle('has-new', hasNew);
+}
+
+// ===== 2026.5.14 アプリアイコンバッジ（Badging API）=====
+// LINEライクに未読メッセージ総数を表示。5以上は5でキャップ。
+// iOS 16.4+ ホーム画面追加PWAでのみ動作。通知オフでもバッジは出す。
+const BADGE_CAP = 5;
+
+// IndexedDB helper（SWとバッジ値を共有）
+function _badgeIDB(mode, value) {
+  return new Promise(resolve => {
+    try {
+      const req = indexedDB.open('inuyama-badge', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('badge');
+      req.onsuccess = () => {
+        const dbi = req.result;
+        const tx = dbi.transaction('badge', mode === 'get' ? 'readonly' : 'readwrite');
+        const store = tx.objectStore('badge');
+        if (mode === 'get') {
+          const g = store.get('count');
+          g.onsuccess = () => resolve(g.result || 0);
+          g.onerror = () => resolve(0);
+        } else {
+          store.put(value, 'count');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        }
+      };
+      req.onerror = () => resolve(mode === 'get' ? 0 : undefined);
+    } catch (e) { resolve(mode === 'get' ? 0 : undefined); }
+  });
+}
+
+// 未読メッセージ総数を集計してアプリバッジを更新
+async function updateAppBadge() {
+  if (!('setAppBadge' in navigator)) return;
+  if (!myId) return;
+
+  const tasks = [];
+
+  // 1. 自分が参加しているチャンネル
+  for (const c of channels) {
+    if (!c.members || !c.members[myId]) continue;
+    const lastAt = c.lastAt?.seconds || 0;
+    const myRead = (lastRead[c.id] || 0) / 1000;
+    if (lastAt <= myRead) continue;
+    if (c.lastUserId === myId) continue;
+    tasks.push((async () => {
+      try {
+        const ts = firebase.firestore.Timestamp.fromMillis(lastRead[c.id] || 0);
+        const snap = await db.collection('channels').doc(c.id)
+          .collection('messages').where('timestamp','>',ts).limit(BADGE_CAP + 1).get();
+        let cnt = 0;
+        snap.forEach(d => { if (d.data().userId !== myId) cnt++; });
+        return cnt;
+      } catch (e) { return 0; }
+    })());
+  }
+
+  // 2. 自分のDM
+  for (const dm of myDMs) {
+    const lastAt = dm.lastAt?.seconds || 0;
+    const myRead = (lastRead[dm.id] || 0) / 1000;
+    if (lastAt <= myRead) continue;
+    if (dm.lastUserId === myId) continue;
+    tasks.push((async () => {
+      try {
+        const ts = firebase.firestore.Timestamp.fromMillis(lastRead[dm.id] || 0);
+        const snap = await db.collection('dms').doc(dm.id)
+          .collection('messages').where('timestamp','>',ts).limit(BADGE_CAP + 1).get();
+        let cnt = 0;
+        snap.forEach(d => { if (d.data().userId !== myId) cnt++; });
+        return cnt;
+      } catch (e) { return 0; }
+    })());
+  }
+
+  // 3. 掲示板
+  const bbMyRead = (lastRead[BB_ID] || 0) / 1000;
+  if (bulletinLastAt > bbMyRead && bulletinLastUserId !== myId) {
+    tasks.push((async () => {
+      try {
+        const ts = firebase.firestore.Timestamp.fromMillis(lastRead[BB_ID] || 0);
+        const snap = await db.collection('bulletin').doc(BB_ID)
+          .collection('messages').where('timestamp','>',ts).limit(BADGE_CAP + 1).get();
+        let cnt = 0;
+        snap.forEach(d => { if (d.data().userId !== myId) cnt++; });
+        return cnt;
+      } catch (e) { return 0; }
+    })());
+  }
+
+  let total = 0;
+  try {
+    const results = await Promise.all(tasks);
+    total = results.reduce((a, b) => a + b, 0);
+  } catch (e) { total = 0; }
+
+  const capped = Math.min(total, BADGE_CAP);
+
+  try {
+    if (capped >= BADGE_CAP) {
+      await navigator.setAppBadge();   // 引数なし → 赤点のみ（ごろまる怒🤖）
+    } else if (capped > 0) {
+      await navigator.setAppBadge(capped); // 1〜4は数字
+    } else {
+      await navigator.clearAppBadge();
+    }
+    await _badgeIDB('set', capped);
+  } catch (e) {}
+}
+
+// 連続発火を防ぐデバウンス（500ms）
+let _badgeTimer = null;
+function scheduleBadgeUpdate() {
+  clearTimeout(_badgeTimer);
+  _badgeTimer = setTimeout(() => { updateAppBadge(); }, 500);
 }
 
 function markReadMsg(docRef) {
