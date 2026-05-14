@@ -59,23 +59,25 @@ async function incrementAppBadge() {
 // バックグラウンドでメッセージ受信時
 // 2026.5.8 16:00 data-onlyメッセージ対応：dataフィールドから title/body を取得
 // 2026.5.14 アプリバッジを +1 する処理を追加
-messaging.onBackgroundMessage(payload => {
+// 2026.5.14 SWが途中で殺される問題対策：async/awaitで両処理の完了を待つ
+messaging.onBackgroundMessage(async payload => {
   const title = payload.data?.title || payload.notification?.title || '院内連絡';
   const body  = payload.data?.body  || payload.notification?.body  || '新しいメッセージがあります';
   const msgTag = payload.messageId || ('msg-' + Date.now());
 
-  // バッジを +1（非同期だが待たない）
-  incrementAppBadge();
-
-  self.registration.showNotification(title, {
-    body,
-    icon:    './icon-192.png',
-    badge:   './icon-192.png',
-    vibrate: [200, 100, 200],
-    tag:     msgTag,
-    renotify: false,
-    data: { url: self.location.origin + self.location.pathname.replace('firebase-messaging-sw.js', '') }
-  });
+  // バッジ更新と通知表示を並列実行し、両方の完了を待つ
+  await Promise.all([
+    incrementAppBadge(),
+    self.registration.showNotification(title, {
+      body,
+      icon:    './icon-192.png',
+      badge:   './icon-192.png',
+      vibrate: [200, 100, 200],
+      tag:     msgTag,
+      renotify: false,
+      data: { url: self.location.origin + self.location.pathname.replace('firebase-messaging-sw.js', '') }
+    })
+  ]);
 });
 
 // 通知タップでアプリを開く
