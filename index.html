@@ -794,6 +794,9 @@ function startAll() {
       renderMy();
       scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
     });
+
+  // 2026.5.14 バッジ診断テストを有効化（ヘッダータイトル3連続タップ）
+  setupBadgeTest();
 }
 
 // ── RENDER ───────────────────────────────
@@ -2128,6 +2131,51 @@ let _badgeTimer = null;
 function scheduleBadgeUpdate() {
   clearTimeout(_badgeTimer);
   _badgeTimer = setTimeout(() => { updateAppBadge(); }, 500);
+}
+
+// ===== 2026.5.14 バッジ動作テスト用（ヘッダータイトル3連続タップで発火）=====
+// 切り分け診断専用。問題解決後に削除可。
+let _badgeTestCount = 0;
+let _badgeTestResetTimer = null;
+let _badgeTestSetupDone = false;
+function setupBadgeTest() {
+  if (_badgeTestSetupDone) return;
+  const t = el('hdrT');
+  if (!t) return;
+  _badgeTestSetupDone = true;
+  t.addEventListener('click', async () => {
+    _badgeTestCount++;
+    clearTimeout(_badgeTestResetTimer);
+    _badgeTestResetTimer = setTimeout(() => { _badgeTestCount = 0; }, 1500);
+    if (_badgeTestCount < 3) return;
+    _badgeTestCount = 0;
+    // 診断情報を収集
+    const uaMatch = navigator.userAgent.match(/OS ([\d_]+)/);
+    const iosVer = uaMatch ? uaMatch[1].replace(/_/g, '.') : '不明';
+    const isStandalone = window.navigator.standalone === true;
+    const hasAPI = ('setAppBadge' in navigator);
+    let info = '';
+    info += '━━ バッジ診断 ━━\n';
+    info += 'iOS: ' + iosVer + '\n';
+    info += 'PWAモード: ' + (isStandalone ? 'はい✅' : 'いいえ❌') + '\n';
+    info += 'Badging API: ' + (hasAPI ? '対応✅' : '非対応❌') + '\n';
+    info += '通知許可: ' + Notification.permission + '\n';
+    info += '━━━━━━━━━━\n';
+    if (!hasAPI) {
+      info += '❌ Badging API が使えません。\niOS 16.4以上が必要です。';
+      alert(info);
+      return;
+    }
+    try {
+      await navigator.setAppBadge(3);
+      info += '✅ setAppBadge(3) 成功\n';
+      info += 'ホーム画面でバッジ「3」が見えるか\n確認してください。';
+      alert(info);
+    } catch (e) {
+      info += '⚠️ エラー: ' + (e && e.message ? e.message : String(e));
+      alert(info);
+    }
+  });
 }
 
 function markReadMsg(docRef) {
