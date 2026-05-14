@@ -517,10 +517,12 @@ try { messaging = firebase.messaging(); } catch(e) {}
 // iOS PWAではアプリ起動中、SWのonBackgroundMessageは発火せず
 // main threadのonMessageが発火するため、ここでbeepを呼ぶ
 // visibilityStateチェックでSW通知と物理的に排他（ぽわんぽわん防止）
+// 2026.5.14 フォアグラウンド受信時にもバッジ更新を発火
 if (messaging) {
   try {
     messaging.onMessage(() => {
       if (document.visibilityState === 'visible') beep();
+      if (typeof scheduleBadgeUpdate === 'function') scheduleBadgeUpdate();
     });
   } catch(e) {}
 }
@@ -797,6 +799,9 @@ function startAll() {
 
   // 2026.5.14 バッジ診断テストを有効化（ヘッダータイトル3連続タップ）
   setupBadgeTest();
+
+  // 2026.5.14 アプリ起動時に初期バッジ同期（SWの取りこぼし補正）
+  setTimeout(() => { updateAppBadge(); }, 1500);
 }
 
 // ── RENDER ───────────────────────────────
