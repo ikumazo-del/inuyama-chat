@@ -200,6 +200,35 @@
                align-items:center; justify-content:center; font-size:12px; transition:.15s; }
     .msg-chk.checked { background:#EF4444; border-color:#EF4444; color:white; }
 
+    /* 2026.5.16 ver1.2.1 ごろまるBot モードボタンバー */
+    .bot-mode-bar {
+      display: flex; gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg);
+      border-top: 1px solid var(--bdr);
+      flex-shrink: 0;
+    }
+    .bot-mode-bar.hidden { display: none; }
+    .bm-btn {
+      flex: 1;
+      padding: 7px 10px;
+      border-radius: 16px;
+      border: 1.5px solid var(--bdr);
+      background: var(--surf);
+      color: var(--txt);
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bm-btn:active { opacity: .8; }
+    .bm-btn.on {
+      background: var(--pri-lt);
+      border-color: var(--pri);
+      color: var(--pri);
+      font-weight: 600;
+    }
+
     /* Chat input */
     .ci-bar { background: white; border-top: 1px solid var(--bdr);
               padding: 7px 10px calc(7px + var(--sb));
@@ -454,6 +483,12 @@
     <!-- チャット -->
     <div id="vChat" class="view">
       <div class="msgs" id="msgs"><div class="sys">チャンネルを選択してください</div></div>
+      <!-- 2026.5.16 ver1.2.1 ごろまるBot機能ボタン（ごろまるBot DMでのみ表示） -->
+      <div class="bot-mode-bar hidden" id="botModeBar">
+        <button class="bm-btn" data-mode="plant" onclick="setBotMode('plant')">🌱 やさしい</button>
+        <button class="bm-btn" data-mode="salt"  onclick="setBotMode('salt')">🧂 塩</button>
+        <button class="bm-btn" data-mode="dog"   onclick="setBotMode('dog')">🐶 だわん</button>
+      </div>
       <div class="ci-bar">
         <input type="file" id="imgInput" accept="image/*" style="display:none">
         <input type="file" id="fileInput"
@@ -551,6 +586,9 @@ let notifyEnabled = localStorage.getItem('notifyEnabled') !== 'false';
 let curDM      = null;
 let myDMs      = [];
 let curBulletin = false;
+// 2026.5.16 ver1.2.1 ごろまるBot モードボタン状態（null/plant/salt/dog）
+let botMode    = localStorage.getItem('botMode') || null;
+if (botMode === '') botMode = null;
 let lastRead = JSON.parse(localStorage.getItem('lastRead')||'{}');
 
 async function deleteAccount() {
@@ -700,7 +738,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.0';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.1';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -802,6 +840,9 @@ function startAll() {
 
   // 2026.5.14 アプリ起動時に初期バッジ同期（SWの取りこぼし補正）
   setTimeout(() => { updateAppBadge(); }, 1500);
+
+  // 2026.5.16 ver1.2.1 ごろまるBot モードボタンUI を localStorage から復元
+  refreshBotModeUI();
 }
 
 // ── RENDER ───────────────────────────────
@@ -1016,6 +1057,12 @@ function openDM(otherId, otherName) {
   el('hdrS').textContent = 'ダイレクトメッセージ';
   el('hdrAct').innerHTML = `<button class="hbtn" onclick="enterSelectMode()" title="メッセージを選択して削除">☑️</button>`;
 
+  // ── 2026.5.16 ver1.2.1 ごろまるBot機能ボタンバー表示制御 ──
+  const isBotDM = (otherId === 'goromaru-bot');
+  el('botModeBar').classList.toggle('hidden', !isBotDM);
+  if (isBotDM) refreshBotModeUI();
+  // ──────────────────────────────────────────────
+
   ['My','All','Staff'].forEach(v=>el('v'+v).classList.remove('on'));
   el('vChat').classList.add('on');
   el('bnav').classList.add('hidden');
@@ -1114,6 +1161,8 @@ function openChat(id) {
 
 function goBack() {
   if (unsubMsg) { unsubMsg(); unsubMsg=null; }
+  // 2026.5.16 ver1.2.1 ごろまるBot機能ボタンバーを必ず非表示に戻す
+  el('botModeBar').classList.add('hidden');
   curCh=null; curDM=null; curBulletin=false;
   // 入力欄を必ず表示に戻す
   const ciBar = document.querySelector('.ci-bar');
@@ -1538,8 +1587,12 @@ async function sendMsg() {
       const dmRef=db.collection('dms').doc(curDM.dmId);
       // 2026.5.10 TTL 90日：expireAt を付与（Firestoreが自動削除）
       const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-      batch.set(dmRef.collection('messages').doc(),
-        {text,name:myName,userId:myId,timestamp:FV.serverTimestamp(),expireAt});
+      // 2026.5.16 ver1.2.1 ごろまるBot DM の場合のみ mode を付与
+      const messageData = {text,name:myName,userId:myId,timestamp:FV.serverTimestamp(),expireAt};
+      if (curDM.otherId === 'goromaru-bot' && botMode) {
+        messageData.mode = botMode;
+      }
+      batch.set(dmRef.collection('messages').doc(), messageData);
       batch.set(dmRef, {
         participantIds:[myId,curDM.otherId],
         participants:{[myId]:myName,[curDM.otherId]:curDM.otherName},
@@ -1549,7 +1602,8 @@ async function sendMsg() {
       incrementStats(); // 2026.5.10
       // ごろまるBotへのDMならWorkerに通知（チャット）
       if (curDM.otherId === 'goromaru-bot') {
-        notifyGoromaru(null, myName, text, curDM.dmId, myId).catch(()=>{});
+        // 2026.5.16 ver1.2.1 mode を Worker へ渡す
+        notifyGoromaru(null, myName, text, curDM.dmId, myId, botMode).catch(()=>{});
       } else {
         // 2026.5.8 16:30 DM送信時はDM相手だけに通知
         notifyPush(myName, myId, text, [curDM.otherId]).catch(()=>{});
@@ -1633,7 +1687,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.0',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.1',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
@@ -2220,14 +2274,29 @@ function beep() {
 // ── FAQ化（Phase2で実装・現在はプレースホルダー）──
 const GOROMARU_WORKER = 'https://inuyama-chat-bot.i-kumazo.workers.dev';
 
+// ── 2026.5.16 ver1.2.1 ごろまるBot モードボタン ───────────────
+// 同じボタン再押下で解除（toggle）、排他選択、localStorage 永続化
+function setBotMode(mode) {
+  botMode = (botMode === mode) ? null : mode;
+  localStorage.setItem('botMode', botMode || '');
+  refreshBotModeUI();
+}
+
+function refreshBotModeUI() {
+  document.querySelectorAll('.bm-btn').forEach(b => {
+    b.classList.toggle('on', b.dataset.mode === botMode);
+  });
+}
+
 // チャンネル・DM でのおしゃべり通知
-async function notifyGoromaru(channelId, senderName, message, dmId, userId) {
+// 2026.5.16 ver1.2.1 mode 引数追加（DM送信時のごろまるBotモード）
+async function notifyGoromaru(channelId, senderName, message, dmId, userId, mode) {
   toast('🤖 ごろまる考え中…');
   try {
     const res = await fetch(GOROMARU_WORKER + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channelId, senderName, message, dmId, userId })
+      body: JSON.stringify({ channelId, senderName, message, dmId, userId, mode })
     });
     const data = await res.json();
     if (data.rateLimited) toast(data.reply || '⚠️ 利用回数上限');
