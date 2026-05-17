@@ -738,7 +738,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.1';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.2';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -1101,6 +1101,10 @@ function loadDMMsgs(dmId) {
             if (ch.doc.data().userId!==myId) {
               if (notifyEnabled) beep(); else toast('💬 ' + (ch.doc.data().name || '新着'));
               markReadMsg(ch.doc.ref);
+              // 2026.5.17 ver1.2.2 自分が画面を見ている間の新着は lastRead も更新（PWAアプリバッジの誤表示防止）
+              if (curDM && curDM.dmId === dmId) {
+                markRead(dmId);
+              }
             }
             scrollEnd();
           }
@@ -1219,6 +1223,10 @@ async function openBulletin() {
             if (ch.doc.data().userId!==myId) {
               if (notifyEnabled) beep(); else toast('📢 ' + (ch.doc.data().name || '新着'));
               markReadMsg(ch.doc.ref);
+              // 2026.5.17 ver1.2.2 掲示板を見ている間の新着は lastRead も更新
+              if (curBulletin) {
+                markRead(BB_ID);
+              }
             }
             scrollEnd();
           }
@@ -1255,6 +1263,10 @@ function loadMsgs(id) {
             if (ch.doc.data().userId!==myId) {
               if (notifyEnabled) beep(); else toast('💬 ' + (ch.doc.data().name || '新着'));
               markReadMsg(ch.doc.ref);
+              // 2026.5.17 ver1.2.2 自分が画面を見ているチャンネルの新着は lastRead も更新
+              if (curCh && curCh.id === id) {
+                markRead(id);
+              }
             }
             scrollEnd();
           }
@@ -1687,7 +1699,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.1',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.2',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
