@@ -856,7 +856,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.4';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.5';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -911,7 +911,20 @@ async function cleanGhostDMs() {
 }
 
 // ── LISTENERS ────────────────────────────
-function startAll() {
+async function startAll() {
+  // 2026.5.17 ver1.2.5 起動時に Firestore の自分の name を取得してローカル同期
+  // （管理者による外部変更を起動時の upsertUser() で巻き戻さないため）
+  try {
+    const myDoc = await db.collection('users').doc(myId).get();
+    if (myDoc.exists) {
+      const remoteName = myDoc.data().name;
+      if (remoteName && remoteName !== myName) {
+        myName = remoteName;
+        localStorage.setItem('uname', myName);
+        const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
+      }
+    }
+  } catch(e) {}
   upsertUser();
   loadStats(); // 2026.5.10 統計読み込み
   cleanEmptyChannels();
@@ -932,7 +945,17 @@ function startAll() {
       }
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
-    .onSnapshot(snap=>{ users=snap.docs.map(d=>d.data()); renderStaff(); cleanGhostDMs(); updateHdrStats(); }); // 2026.5.10
+    .onSnapshot(snap=>{
+      users=snap.docs.map(d=>d.data());
+      // 2026.5.17 ver1.2.5 自分の name が外部（管理者）から変更されていたらリアルタイム同期
+      const me = users.find(u => u.userId === myId);
+      if (me && me.name && me.name !== myName) {
+        myName = me.name;
+        localStorage.setItem('uname', myName);
+        const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
+      }
+      renderStaff(); cleanGhostDMs(); updateHdrStats();
+    }); // 2026.5.10
   // 2026.5.8 16:30 掲示板の未読バッジ（ℹ️赤点）監視
   unsubBulletin = db.collection('bulletin').doc(BB_ID)
     .onSnapshot(doc=>{
@@ -1821,7 +1844,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.4',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.5',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
