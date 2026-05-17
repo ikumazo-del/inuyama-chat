@@ -301,6 +301,17 @@
     .ni-bb .ni-lb { display: none; }
     .ni-bb.on { opacity: 1; color: var(--pri); }
 
+    /* 2026.5.17 ステップ1/2 矢印アニメーション（Safari→ホーム画面追加への誘導） */
+    @keyframes bounce-arrow {
+      0%,100% { transform: translateY(0);   opacity: 1;    }
+      50%     { transform: translateY(7px); opacity: 0.55; }
+    }
+    .bounce-arrow { display: inline-block; animation: bounce-arrow 1.2s ease-in-out infinite; }
+    .key-btn {
+      display: inline-block; border: 1px solid #185FA5; border-radius: 3px;
+      padding: 0 4px; font-size: 10px; line-height: 1.2; vertical-align: 1px; font-weight: 600;
+    }
+
     .hidden { display: none !important; }
   </style>
 </head>
@@ -313,23 +324,31 @@
     <div class="card-t">総合犬山中央病院 院内連絡</div>
     <div class="card-st">パイロット運用 — スタッフ専用</div>
 
-    <!-- ステップ1: iOS PWA案内 -->
+    <!-- ステップ1: iOS PWA案内（2026.5.17 ver1.2.2 微調整：Safari単独で進めない仕様に変更）-->
     <div id="setupStep1">
       <div style="display:flex;gap:6px;margin:10px 0 14px;">
         <div style="flex:1;height:3px;border-radius:2px;background:#1565C0;"></div>
         <div style="flex:1;height:3px;border-radius:2px;background:#E2E8F0;"></div>
       </div>
       <div style="font-size:13px;font-weight:600;color:#1565C0;margin-bottom:10px;">ステップ 1／2　ホーム画面に追加</div>
-      <div style="background:#E3F2FD;border-radius:10px;padding:12px 14px;margin-bottom:10px;text-align:left;">
-        <div style="font-size:12px;font-weight:600;color:#0C447C;margin-bottom:8px;">📱 アプリとして使用してください！！</div>
+      <div style="font-size:12px;color:#0C447C;line-height:1.7;margin-bottom:12px;">
+        ホーム画面にアイコンを登録して<br>📱 アプリとして使用する手順をお知らせします
+      </div>
+      <div style="background:#E3F2FD;border-radius:10px;padding:12px 14px;margin-bottom:12px;text-align:left;">
         <div style="font-size:12px;color:#185FA5;line-height:2.0;">
-          <span style="display:inline-block;width:20px;font-weight:600;">①</span>下の共有ボタン（□↑）をタップ<br>
-          <span style="display:inline-block;width:20px;font-weight:600;">②</span>「ホーム画面に追加」を選択<br>
-          <span style="display:inline-block;width:20px;font-weight:600;">③</span>ホーム画面のアイコンから起動
+          <span style="display:inline-block;width:20px;font-weight:600;">①</span>下の <span class="key-btn">...</span> を押して <span class="key-btn" style="font-size:9px;padding:0 3px;">□↑</span> 共有を選択<br>
+          <span style="display:inline-block;width:20px;font-weight:600;">②</span><span style="color:#1565C0;font-weight:700;">➕</span>「ホーム画面に追加」を選択<br>
+          <span style="display:inline-block;width:20px;"></span><span style="color:#6B7280;font-size:11px;">（なければ表示を増やしてください）</span><br>
+          <span style="display:inline-block;width:20px;font-weight:600;">③</span>院内連絡アプリを登録
         </div>
       </div>
-      <div style="font-size:11px;color:#9CA3AF;margin-bottom:14px;">※ Safariのまま登録するとアカウントが重複します</div>
-      <button class="btn btn-pri" onclick="goSetupStep2()">ホーム画面に追加しました → 次へ</button>
+      <div style="text-align:center;margin:14px 0 12px;">
+        <div class="bounce-arrow" style="font-size:28px;color:#1565C0;line-height:1;font-weight:300;">↓</div>
+        <div style="font-size:11px;color:#1565C0;margin-top:4px;font-weight:600;">画面下の <span class="key-btn">...</span> を押す</div>
+      </div>
+      <div style="border-top:1px solid #F0F4F8;padding-top:10px;font-size:12px;color:#185FA5;text-align:center;">
+        🌱 最後の画面でアカウントを登録しましょう
+      </div>
     </div>
 
     <!-- ステップ2: 利用ルール＋名前入力 -->
@@ -654,12 +673,6 @@ function init() {
     startAll();
     updateBellBtn();
   }
-}
-
-function goSetupStep2() {
-  el('setupStep1').style.display = 'none';
-  el('setupStep2').style.display = '';
-  setTimeout(()=>el('nameInput').focus(), 250);
 }
 
 // ── SETUP ────────────────────────────────
