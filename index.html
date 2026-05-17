@@ -246,6 +246,12 @@
                     border-radius: 7px; padding: 4px 9px; font-size: 12px;
                     font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0; }
     .del-user-btn:active { opacity: .75; }
+    /* 2026.5.17 ver1.2.3 管理者編集ボタン（✏️）*/
+    .edit-user-btn { background: #DBEAFE; border: none; color: var(--pri);
+                     border-radius: 7px; padding: 4px 9px; font-size: 12px;
+                     font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0;
+                     margin-right: 8px; }
+    .edit-user-btn:active { opacity: .75; }
     .admin-key { background: none; border: none; font-size: 15px;
                  cursor: pointer; padding: 2px 6px; color: var(--sub); }
     .cam-btn { width:36px; height:36px; border-radius:50%; background:var(--pri-lt);
@@ -379,14 +385,14 @@
 <!-- 名前変更モーダル -->
 <div id="nameModal" class="ov hidden">
   <div class="card">
-    <div class="card-t" style="margin-bottom:14px;">👤 アカウント設定</div>
+    <div class="card-t" id="nameModalTitle" style="margin-bottom:14px;">👤 アカウント設定</div>
     <label class="lbl" for="nameChangeInput">職種　名前</label>
     <input type="text" id="nameChangeInput" maxlength="20" autocomplete="off">
     <div style="display:flex;gap:8px;margin-top:4px;">
       <button class="btn btn-ghost" onclick="closeNameModal()" style="flex:1;">キャンセル</button>
-      <button class="btn btn-pri"   onclick="saveName()"        style="flex:2;">保存</button>
+      <button class="btn btn-pri"   id="nameSaveBtn" onclick="saveName()"        style="flex:2;">保存</button>
     </div>
-    <div style="text-align:right;margin-top:14px;padding-top:10px;border-top:1px solid #F0F4F8;">
+    <div id="nameModalDelArea" style="text-align:right;margin-top:14px;padding-top:10px;border-top:1px solid #F0F4F8;">
       <button onclick="confirmDelete()" style="background:none;border:none;color:#EF4444;font-size:12px;cursor:pointer;font-family:inherit;padding:4px 2px;">アカウントを削除する</button>
     </div>
   </div>
@@ -695,12 +701,21 @@ function doSetup() {
 }
 
 function promptName() {
+  // 2026.5.17 ver1.2.3 通常の自己編集モードに戻す
+  adminEditTarget = null;
+  el('nameModalTitle').textContent = '👤 アカウント設定';
+  el('nameSaveBtn').setAttribute('onclick', 'saveName()');
+  el('nameModalDelArea').classList.remove('hidden');
   el('nameChangeInput').value = myName;
   show('nameModal');
   setTimeout(()=>el('nameChangeInput').focus(), 250);
 }
 
-function closeNameModal() { hide('nameModal'); }
+function closeNameModal() {
+  hide('nameModal');
+  // 2026.5.17 ver1.2.3 管理者編集モードを終了
+  adminEditTarget = null;
+}
 
 function saveName() {
   const n = el('nameChangeInput').value.trim();
@@ -708,6 +723,9 @@ function saveName() {
   // 2026.5.10 同名チェック（完全ブロック）
   const dup = findDuplicateName(n, myId);
   if (dup) { alert('この名前は既に使われています。別の表記（例：外科　田中太）で登録し、不要アカウントがあれば管理者へご連絡ください。'); return; }
+  // 2026.5.17 ver1.2.3 バグ修正：myName と localStorage を更新（5/10の同名チェック導入時に欠落していた）
+  myName = n;
+  localStorage.setItem('uname', myName);
   const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
   upsertUser();
   channels.filter(c=>c.members[myId]).forEach(c=>{
@@ -715,6 +733,79 @@ function saveName() {
   });
   hide('nameModal');
   toast('✅ 名前を変更しました');
+}
+
+// 2026.5.17 ver1.2.3 管理者による他人のアカウント名変更 ─────────
+let adminEditTarget = null;  // {userId, name} or null
+
+function openAdminEditName(targetId, targetName) {
+  if (!isAdmin) return;
+  adminEditTarget = { userId: targetId, name: targetName };
+  el('nameModalTitle').textContent = `✏️ ${targetName} さんの名前変更`;
+  el('nameSaveBtn').setAttribute('onclick', 'adminSaveName()');
+  el('nameModalDelArea').classList.add('hidden');
+  el('nameChangeInput').value = targetName;
+  show('nameModal');
+  setTimeout(()=>el('nameChangeInput').focus(), 250);
+}
+
+async function adminSaveName() {
+  if (!adminEditTarget) return;
+  const targetId = adminEditTarget.userId;
+  const oldName = adminEditTarget.name;
+  const n = el('nameChangeInput').value.trim();
+  if (!n) { toast('名前を入力してください'); return; }
+  if (n === oldName) { hide('nameModal'); adminEditTarget = null; return; }  // 変更なし
+  // 同名チェック（対象本人を除外）
+  const dup = findDuplicateName(n, targetId);
+  if (dup) { alert('この名前は既に使われています。別の表記で登録してください。'); return; }
+
+  try {
+    // 1. users/{targetId}.name を更新
+    await db.collection('users').doc(targetId).update({ name: n });
+
+    // 2. 参加チャンネルすべてで members.{targetId} を更新
+    const chUpdates = channels
+      .filter(c => c.members && c.members[targetId] !== undefined)
+      .map(c => db.collection('channels').doc(c.id).update({ [`members.${targetId}`]: n }));
+    await Promise.all(chUpdates);
+
+    // 3. ごろまるBot との DM に管理者通知を投稿
+    const dmId = [targetId, 'goromaru-bot'].sort().join('_');
+    const dmRef = db.collection('dms').doc(dmId);
+    const d = new Date();
+    const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
+    const notifyText = `📋 アプリ管理(${myName})からの連絡です。\nお名前を「${oldName}」→「${n}」に変更しました(${dateStr})。`;
+    const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
+    const batch = db.batch();
+    batch.set(dmRef.collection('messages').doc(), {
+      text: notifyText,
+      name: '🤖 ごろまるBot',
+      userId: 'goromaru-bot',
+      timestamp: FV.serverTimestamp(),
+      expireAt
+    });
+    batch.set(dmRef, {
+      participantIds: [targetId, 'goromaru-bot'],
+      participants: { [targetId]: n, 'goromaru-bot': '🤖 ごろまるBot' },
+      lastMsg: notifyText.slice(0, 30),
+      lastAt: FV.serverTimestamp(),
+      lastUserId: 'goromaru-bot'
+    }, { merge: true });
+    await batch.commit();
+    incrementStats();
+
+    // 4. プッシュ通知（対象スタッフのみ・テキスト送信扱いで強通知）
+    notifyPush('🤖 ごろまるBot', 'goromaru-bot', notifyText.slice(0, 80), [targetId]).catch(() => {});
+
+    hide('nameModal');
+    adminEditTarget = null;
+    toast(`✅ ${oldName} → ${n} に変更しました`);
+  } catch(e) {
+    console.error(e);
+    toast('⚠️ 名前変更に失敗しました');
+  }
 }
 
 function confirmDelete() {
@@ -751,7 +842,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.2';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.3';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -951,13 +1042,17 @@ function renderStaff() {
       </div>`;
     }
     const safeName = (u.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    // 2026.5.17 ver1.2.3 管理者モードのみ ✏️ 名前変更ボタンを表示
+    const editBtn = isAdmin
+      ? `<button class="edit-user-btn" onclick="event.stopPropagation();openAdminEditName('${u.userId}','${safeName}')">✏️</button>`
+      : '';
     const delBtn = isAdmin
       ? `<button class="del-user-btn" onclick="event.stopPropagation();confirmDeleteUser('${u.userId}','${safeName}')">🗑️</button>`
       : '';
     return `<div class="row tap" onclick="openDM('${u.userId}','${safeName}')">
       <div class="row-ic">&#x1F464;</div>
       <div class="row-bd"><div class="row-n">${esc(u.name)}</div><div class="row-s">${chs||'未参加'} · タップしてDM</div></div>
-      <div class="row-rt">${delBtn}<span class="chev">›</span></div>
+      <div class="row-rt">${editBtn}${delBtn}<span class="chev">›</span></div>
     </div>`;
   }
 
@@ -1712,7 +1807,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.2',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.3',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
