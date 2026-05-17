@@ -856,7 +856,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.5';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.6';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -954,7 +954,8 @@ async function startAll() {
         localStorage.setItem('uname', myName);
         const lbl = el('myLbl'); if(lbl) lbl.textContent = myName;
       }
-      renderStaff(); cleanGhostDMs(); updateHdrStats();
+      // 2026.5.17 ver1.2.6 users 変化時に DM一覧も再描画（DM相手の名前変更を即時反映）
+      renderStaff(); renderMy(); cleanGhostDMs(); updateHdrStats();
     }); // 2026.5.10
   // 2026.5.8 16:30 掲示板の未読バッジ（ℹ️赤点）監視
   unsubBulletin = db.collection('bulletin').doc(BB_ID)
@@ -1017,7 +1018,9 @@ function renderMy() {
     html += '<div class="sec" style="background:var(--bg);padding:7px 14px 5px;font-size:11px;font-weight:700;color:var(--sub);">ダイレクトメッセージ</div>';
     html += myDMs.map(dm=>{
       const otherId   = Object.keys(dm.participants||{}).find(k=>k!==myId)||'';
-      const otherName = (dm.participants||{})[otherId]||'?';
+      // 2026.5.17 ver1.2.6 users コレクションを優先（管理者編集による名前変更の即時反映、participants更新漏れへの耐性）
+      const userRec   = users.find(u => u.userId === otherId);
+      const otherName = (userRec && userRec.name) || (dm.participants||{})[otherId] || '?';
       const pre = dm.lastMsg ? esc(dm.lastMsg).slice(0,24)+(dm.lastMsg.length>24?'…':'') : '（メッセージなし）';
       const dmLastAt = dm.lastAt?.seconds||0;
       const dmRead   = (lastRead[dm.id]||0)/1000;
@@ -1844,7 +1847,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.5',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.6',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
