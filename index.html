@@ -731,6 +731,11 @@ function saveName() {
   channels.filter(c=>c.members[myId]).forEach(c=>{
     db.collection('channels').doc(c.id).update({[`members.${myId}`]: myName});
   });
+  // 2026.5.17 ver1.2.4 自分が関わる全DMの participants も更新（相手画面のDM一覧表示のため）
+  db.collection('dms').where('participantIds', 'array-contains', myId).get()
+    .then(snap => {
+      snap.docs.forEach(d => d.ref.update({ [`participants.${myId}`]: myName }).catch(()=>{}));
+    }).catch(()=>{});
   hide('nameModal');
   toast('✅ 名前を変更しました');
 }
@@ -769,6 +774,15 @@ async function adminSaveName() {
       .filter(c => c.members && c.members[targetId] !== undefined)
       .map(c => db.collection('channels').doc(c.id).update({ [`members.${targetId}`]: n }));
     await Promise.all(chUpdates);
+
+    // 2026.5.17 ver1.2.4 対象スタッフが関わる全DMの participants.{targetId} を更新
+    const dmsSnap = await db.collection('dms')
+      .where('participantIds', 'array-contains', targetId)
+      .get();
+    const dmUpdates = dmsSnap.docs.map(d =>
+      d.ref.update({ [`participants.${targetId}`]: n })
+    );
+    await Promise.all(dmUpdates);
 
     // 3. ごろまるBot との DM に管理者通知を投稿
     const dmId = [targetId, 'goromaru-bot'].sort().join('_');
@@ -842,7 +856,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.3';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.4';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -1807,7 +1821,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.3',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.4',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
