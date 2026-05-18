@@ -619,7 +619,12 @@ if (botMode === '') botMode = null;
 let lastRead = JSON.parse(localStorage.getItem('lastRead')||'{}');
 // 2026.5.18 ver1.2.7 チャンネル名変更の既読管理（chId → lastRenamedAt.seconds）
 let lastSeenRenamed = JSON.parse(localStorage.getItem('lastSeenRenamed')||'{}');
-let renameSeenInitialized = false;
+// 2026.5.18 ver1.2.7.1 ver1.2.7 の初回既読化ロジックの罠で誤って既読化されたデータを1度だけリセット
+if (!localStorage.getItem('renameSeenReset_v127_1')) {
+  lastSeenRenamed = {};
+  localStorage.setItem('lastSeenRenamed', '{}');
+  localStorage.setItem('renameSeenReset_v127_1', '1');
+}
 
 async function deleteAccount() {
   hide('deleteModal');
@@ -862,7 +867,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.7';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.7.1';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -942,23 +947,18 @@ async function startAll() {
   unsubCh = db.collection('channels').orderBy('createdAt','asc')
     .onSnapshot(snap=>{
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
-      // 2026.5.18 ver1.2.7 リネーム既読の同期
-      // - 初回スナップショット時：既存の lastRenamedAt を全て「見たことにする」（新規ユーザーに過去の星を出さない）
-      // - 2回目以降：自分が変更したものは自動で見たことにする（自分には星を出さない）
+      // 2026.5.18 ver1.2.7.1 自分が変更したチャンネル名は自動で既読化（自分には★を出さない）
       let changed = false;
       channels.forEach(c => {
-        if (c.lastRenamedAt) {
+        if (c.lastRenamedBy === myId && c.lastRenamedAt) {
           const ts = c.lastRenamedAt.seconds || 0;
-          const seen = lastSeenRenamed[c.id] || 0;
-          if (!renameSeenInitialized) {
-            if (seen < ts) { lastSeenRenamed[c.id] = ts; changed = true; }
-          } else if (c.lastRenamedBy === myId && seen < ts) {
-            lastSeenRenamed[c.id] = ts; changed = true;
+          if ((lastSeenRenamed[c.id]||0) < ts) {
+            lastSeenRenamed[c.id] = ts;
+            changed = true;
           }
         }
       });
       if (changed) localStorage.setItem('lastSeenRenamed', JSON.stringify(lastSeenRenamed));
-      renameSeenInitialized = true;
       renderMy(); renderAll(); renderStaff();
       updateHdrStats(); // 2026.5.10
       scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
@@ -1094,10 +1094,10 @@ function renderAll() {
     const isEm = c.name.includes('緊急');
     const chName = mem ? esc(c.name) : esc(c.name) + ' 🔒';
     const subTxt = mem ? `${cnt}人参加中 · ${esc(c.createdBy||'')}` : `${cnt}人 · ${esc(c.createdBy||'')}`;
-    // 2026.5.18 ver1.2.7 チャンネル名変更マーク
+    // 2026.5.18 ver1.2.7.1 チャンネル名変更マーク（メンバーのみ表示）
     const renameTs   = c.lastRenamedAt?.seconds || 0;
     const renameSeen = lastSeenRenamed[c.id] || 0;
-    const renameStar = (renameTs > renameSeen) ? '<span class="rename-star">★</span>' : '';
+    const renameStar = (mem && renameTs > renameSeen) ? '<span class="rename-star">★</span>' : '';
     return `<div class="row tap" onclick="openChat('${c.id}')">
       <div class="row-ic ${isEm?'em':''}">#</div>
       <div class="row-bd"><div class="row-n">${chName}${renameStar}</div><div class="row-s">${subTxt}</div></div>
