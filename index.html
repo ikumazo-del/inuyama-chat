@@ -175,6 +175,8 @@
     .b-t  { font-size: 10px; color: var(--sub); padding: 0 4px; display:flex; gap:4px; align-items:center; justify-content:flex-end; }
     .read-label { font-size: 10px; color: #7B9CCF; font-weight:600; }
     .unread-dot { width:9px; height:9px; border-radius:50%; background:#EF4444; flex-shrink:0; }
+    /* 2026.5.18 ver1.2.7 チャンネル名変更の控えめマーク */
+    .rename-star { display:inline-block; font-size:10px; color:#F59E0B; opacity:0.85; margin-left:5px; vertical-align:middle; }
     .sys  { text-align: center; font-size: 11px; color: var(--sub); padding: 6px 0; }
     /* 2026.5.10 選択削除モード */
     .sel-bar { display:flex; align-items:center; justify-content:space-between;
@@ -615,6 +617,9 @@ let curBulletin = false;
 let botMode    = localStorage.getItem('botMode') || null;
 if (botMode === '') botMode = null;
 let lastRead = JSON.parse(localStorage.getItem('lastRead')||'{}');
+// 2026.5.18 ver1.2.7 チャンネル名変更の既読管理（chId → lastRenamedAt.seconds）
+let lastSeenRenamed = JSON.parse(localStorage.getItem('lastSeenRenamed')||'{}');
+let renameSeenInitialized = false;
 
 async function deleteAccount() {
   hide('deleteModal');
@@ -646,6 +651,7 @@ async function deleteAccount() {
     localStorage.removeItem('uid');
     localStorage.removeItem('uname');
     localStorage.removeItem('lastRead');
+    localStorage.removeItem('lastSeenRenamed');
     location.reload();
   } catch(e) { toast('⚠️ 削除に失敗しました'); }
 }
@@ -856,7 +862,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.6';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.7';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -936,12 +942,43 @@ async function startAll() {
   unsubCh = db.collection('channels').orderBy('createdAt','asc')
     .onSnapshot(snap=>{
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
+      // 2026.5.18 ver1.2.7 リネーム既読の同期
+      // - 初回スナップショット時：既存の lastRenamedAt を全て「見たことにする」（新規ユーザーに過去の星を出さない）
+      // - 2回目以降：自分が変更したものは自動で見たことにする（自分には星を出さない）
+      let changed = false;
+      channels.forEach(c => {
+        if (c.lastRenamedAt) {
+          const ts = c.lastRenamedAt.seconds || 0;
+          const seen = lastSeenRenamed[c.id] || 0;
+          if (!renameSeenInitialized) {
+            if (seen < ts) { lastSeenRenamed[c.id] = ts; changed = true; }
+          } else if (c.lastRenamedBy === myId && seen < ts) {
+            lastSeenRenamed[c.id] = ts; changed = true;
+          }
+        }
+      });
+      if (changed) localStorage.setItem('lastSeenRenamed', JSON.stringify(lastSeenRenamed));
+      renameSeenInitialized = true;
       renderMy(); renderAll(); renderStaff();
       updateHdrStats(); // 2026.5.10
       scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
       if (curCh) {
         const c=channels.find(x=>x.id===curCh.id);
-        if (c) el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
+        if (c) {
+          // 2026.5.18 ver1.2.7 チャンネル名のリアルタイム同期（真実のソース = channels コレクション）
+          if (c.name !== curCh.name) {
+            const oldName = curCh.name;
+            curCh.name = c.name;
+            el('hdrT').textContent = c.name;
+            // 自分以外が変更した場合のみトースト（自分が変更した時は renameCh 内の ✅ トーストが出る）
+            if (c.lastRenamedBy && c.lastRenamedBy !== myId) {
+              const whoUser = users.find(u=>u.userId===c.lastRenamedBy);
+              const whoName = (whoUser && whoUser.name) || '誰か';
+              toast(`📝 ${whoName}さんがチャンネル名を「${oldName}」→「${c.name}」に変更しました`);
+            }
+          }
+          el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
+        }
       }
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
@@ -1003,9 +1040,13 @@ function renderMy() {
       const myRead = (lastRead[c.id]||0)/1000;
       const hasNew = lastAt > myRead && c.lastMsg && c.lastUserId !== myId;
       const badge  = hasNew ? '<span class="unread-dot"></span>' : '';
+      // 2026.5.18 ver1.2.7 チャンネル名変更マーク
+      const renameTs   = c.lastRenamedAt?.seconds || 0;
+      const renameSeen = lastSeenRenamed[c.id] || 0;
+      const renameStar = (renameTs > renameSeen) ? '<span class="rename-star">★</span>' : '';
       return `<div class="row tap" onclick="openChat('${c.id}')">
         <div class="row-ic" style="${hasNew?'background:#E3F2FD;':''}">#</div>
-        <div class="row-bd"><div class="row-n" style="${hasNew?'font-weight:800;':''}">${esc(c.name)}</div><div class="row-s">${cnt}人 · ${pre}</div></div>
+        <div class="row-bd"><div class="row-n" style="${hasNew?'font-weight:800;':''}">${esc(c.name)}${renameStar}</div><div class="row-s">${cnt}人 · ${pre}</div></div>
         <div class="row-rt">${badge}<span class="chev">›</span></div>
       </div>`;
     }).join('');
@@ -1053,9 +1094,13 @@ function renderAll() {
     const isEm = c.name.includes('緊急');
     const chName = mem ? esc(c.name) : esc(c.name) + ' 🔒';
     const subTxt = mem ? `${cnt}人参加中 · ${esc(c.createdBy||'')}` : `${cnt}人 · ${esc(c.createdBy||'')}`;
+    // 2026.5.18 ver1.2.7 チャンネル名変更マーク
+    const renameTs   = c.lastRenamedAt?.seconds || 0;
+    const renameSeen = lastSeenRenamed[c.id] || 0;
+    const renameStar = (renameTs > renameSeen) ? '<span class="rename-star">★</span>' : '';
     return `<div class="row tap" onclick="openChat('${c.id}')">
       <div class="row-ic ${isEm?'em':''}">#</div>
-      <div class="row-bd"><div class="row-n">${chName}</div><div class="row-s">${subTxt}</div></div>
+      <div class="row-bd"><div class="row-n">${chName}${renameStar}</div><div class="row-s">${subTxt}</div></div>
       <div class="row-rt" onclick="event.stopPropagation()">
         ${mem ? `<button class="tag tag-l" onclick="leaveCh('${c.id}')">退会</button>`
               : `<button class="tag tag-j" onclick="joinCh('${c.id}')">参加</button>`}
@@ -1294,6 +1339,14 @@ function openChat(id) {
   const ciBar = document.querySelector('.ci-bar');
   if (ciBar) ciBar.style.display = mem ? '' : 'none';
   markRead(id);
+  // 2026.5.18 ver1.2.7 チャンネルを開いたらリネーム星を消す
+  if (c.lastRenamedAt) {
+    const ts = c.lastRenamedAt.seconds || 0;
+    if ((lastSeenRenamed[id]||0) < ts) {
+      lastSeenRenamed[id] = ts;
+      localStorage.setItem('lastSeenRenamed', JSON.stringify(lastSeenRenamed));
+    }
+  }
   if (mem) {
     // 既存メッセージに既読を書き込む
     db.collection('channels').doc(id).collection('messages')
@@ -1817,17 +1870,29 @@ async function sendMsg() {
 }
 
 // ── MEMBER SHEET ─────────────────────────
+// 2026.5.18 ver1.2.7 チャンネル名変更（10文字制限・データソース統一・他メンバーへの通知）
 async function renameCh(id) {
   const c = channels.find(x=>x.id===id); if (!c) return;
-  const newName = prompt('チャンネル名を変更:', c.name);
+  const newName = prompt('チャンネル名変更（10文字以内）:', c.name);
   if (!newName||!newName.trim()) return;
-  if (channels.some(x=>x.name===newName.trim()&&x.id!==id)) { toast('同じ名前が既にあります'); return; }
+  const trimmed = newName.trim();
+  if (trimmed.length > 10) { toast('10文字以内にしてください'); return; }
+  if (trimmed === c.name) return; // 変化なしなら何もしない
+  if (channels.some(x=>x.name===trimmed&&x.id!==id)) { toast('同じ名前が既にあります'); return; }
+  const oldName = c.name;
   try {
-    await db.collection('channels').doc(id).update({name: newName.trim()});
-    el('hdrT').textContent = newName.trim();
-    curCh.name = newName.trim();
-    toast('✅ チャンネル名を変更しました');
-  } catch(e) { toast('⚠️ 変更に失敗'); }
+    // lastRenamedBy を一緒に書き込むことで、リスナー側で「自分か他人か」を判別できる
+    await db.collection('channels').doc(id).update({
+      name: trimmed,
+      lastRenamedBy: myId,
+      lastRenamedAt: FV.serverTimestamp()
+    });
+    // hdrT と curCh.name の更新は unsubCh リスナーに任せる（書く責任→読む責任への移譲）
+    toast(`✅ 「${oldName}」→「${trimmed}」に変更しました`);
+  } catch(e) {
+    console.error('[renameCh]', e);
+    toast('⚠️ 変更に失敗');
+  }
 }
 
 function showMembers(id) {
