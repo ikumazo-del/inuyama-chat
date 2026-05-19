@@ -557,6 +557,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script><!-- 2026.5.19 ver1.2.8 追加 -->
 
 <script>
 firebase.initializeApp({
@@ -567,6 +568,16 @@ firebase.initializeApp({
   messagingSenderId:"477126215293",
   appId:"1:477126215293:web:25c07aee52104596625314"
 });
+
+// ── 2026.5.19 ver1.2.8 App Check (reCAPTCHA v3) ──────────────
+// cURL/Postman/Bot による Firestore への直接API攻撃をブロック
+// サイトキーは公開可（reCAPTCHA v3 仕様）。シークレットキーは Firebase Console 側にのみ保管。
+// 順序重要：initializeApp の直後・firestore()/storage() の前に呼ぶこと。
+firebase.appCheck().activate(
+  new firebase.appCheck.ReCaptchaV3Provider('6LeorvEsAAAAAAR5cUUsGZ_IfwNZSQT-dOF9RH1T'),
+  true  // isTokenAutoRefreshEnabled: トークン自動更新を有効化
+);
+
 const db = firebase.firestore();
 const FV = firebase.firestore.FieldValue;
 const storage = firebase.storage();
@@ -867,7 +878,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.7.1';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.8';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -1912,7 +1923,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.6',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.8',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
