@@ -794,18 +794,11 @@ async function init() {
     navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(()=>{});
 
   // ── web起動ブロック：PWA（ホーム画面/Dock）からの起動のみ許可 ──
+  // 2026.5 ver1.2.10 端末判定を廃止し browserBlock 一本化
+  //   （Mac Safari は navigator.standalone を false で“持つ”ため iOS と誤判定されていた）
   if (!isPWA()) {
-    const isIOSSafari = typeof window.navigator.standalone !== 'undefined';
-    if (isIOSSafari) {
-      // iOS Safari：従来どおりホーム追加オンボーディング（setupStep1）
-      el('setupStep1').style.display = '';
-      el('setupStep2').style.display = 'none';
-      show('setupModal');
-    } else {
-      // Mac/PC/Android のブラウザ：専用ブロック画面
-      hide('setupModal');
-      show('browserBlock');
-    }
+    hide('setupModal');
+    show('browserBlock');
     return;
   }
 
@@ -1001,7 +994,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.9';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.10';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -1080,8 +1073,7 @@ async function startAll() {
   }).catch(() => updateBellBtn());
   unsubCh = db.collection('channels').orderBy('createdAt','asc')
     .onSnapshot(snap=>{
-      // 2026.5 ver1.2.9 起動直後のキャッシュ初回応答（空・未確定）はローディング据え置き
-      if (snap.metadata.fromCache && snap.empty && !chLoaded) return;
+      // 2026.5 ver1.2.10 fromCacheガードは撤去。届いた応答（キャッシュ含む）は必ず描画する
       chLoaded = true;
       hideBootLoading();
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
@@ -1118,6 +1110,12 @@ async function startAll() {
           el('hdrS').textContent = Object.keys(c.members).length+'人参加中';
         }
       }
+    }, err=>{
+      // 2026.5 ver1.2.10 今まで握りつぶしていた onSnapshot エラーを可視化
+      console.error('channels onSnapshot error:', err);
+      chLoaded = true;
+      hideBootLoading();
+      toast('⚠️ チャンネル取得エラー：' + (err.code || err.message || err));
     });
   unsubUs = db.collection('users').orderBy('lastSeen','desc')
     .onSnapshot(snap=>{
@@ -2050,7 +2048,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.9',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.10',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
