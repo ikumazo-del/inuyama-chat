@@ -466,6 +466,31 @@
 <div id="toast"></div>
 
 <!-- アプリ本体 -->
+<!-- 2026.5 ver1.2.11 web起動ブロック：PWA(ホーム画面/Dock)以外からの起動を案内画面で止める -->
+<div id="browserBlock" class="ov hidden">
+  <div class="card">
+    <div class="card-ic">🏥</div>
+    <div class="card-t">総合犬山中央病院 院内連絡</div>
+    <div class="card-st">パイロット運用 — スタッフ専用</div>
+    <div style="background:#E3F2FD;border-radius:10px;padding:14px 16px;margin:14px 0;text-align:left;">
+      <div style="font-size:13px;font-weight:700;color:#1565C0;margin-bottom:8px;">📱 アプリのアイコンから起動してください</div>
+      <div style="font-size:12px;color:#185FA5;line-height:1.9;">
+        このアプリはブラウザのタブからは使用できません。<br>
+        端末に追加した<b>アプリのアイコン</b>から開き直してください。
+      </div>
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:12px 14px;text-align:left;font-size:12px;color:var(--sub);line-height:1.9;">
+      <b style="color:var(--txt);">追加方法</b><br>
+      ・iPhone / iPad … 共有 <span class="key-btn" style="font-size:9px;padding:0 3px;">□↑</span> →「ホーム画面に追加」<br>
+      ・Mac Safari … 共有 <span class="key-btn" style="font-size:9px;padding:0 3px;">□↑</span> →「Dock に追加」<br>
+      ・Windows / Android … アドレスバーの<b>インストール</b>アイコン
+    </div>
+    <div style="margin-top:14px;font-size:11px;color:var(--sub);text-align:center;">
+      追加後、アイコンから開き直してください
+    </div>
+  </div>
+</div>
+
 <div id="app" class="hidden">
 
   <div class="hdr">
@@ -677,24 +702,33 @@ const show = id => el(id).classList.remove('hidden');
 const hide = id => el(id).classList.add('hidden');
 
 // ── INIT ─────────────────────────────────
+// ── 2026.5 ver1.2.11 web起動ブロック（③のみ上乗せ。①トークン待ち・②ローディングは載せない）──
+// PWA（ホーム画面/Dock）からの起動かどうか。
+// localhost・file: は端末内に閉じる経路なので開発例外として許可（本番ドメインには穴を空けない）。
+function isPWA(){
+  const h = location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1' || location.protocol === 'file:') return true;
+  return window.navigator.standalone === true
+      || window.matchMedia('(display-mode: standalone)').matches;
+}
+
 function init() {
   if ('serviceWorker' in navigator)
     navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(()=>{});
 
+  // web起動ブロック：PWA からの起動のみ許可。ブラウザ起動は端末を問わず browserBlock へ。
+  if (!isPWA()) {
+    hide('setupModal');
+    show('browserBlock');
+    return;
+  }
+
+  // ── ここから先は PWA 起動が確定（＝以降は 1.2.8 と同一の挙動） ──
   if (!myId || !myName) {
-    // iOS Safari（非PWA）の場合はステップ1を表示
-    // 2026.5.8 window.navigator.standalone はiOS Safariのみ boolean で定義される
-    // Mac/PC（Chrome等）では undefined → ステップ2へ直接スキップ
-    const isIOSSafari = typeof window.navigator.standalone !== 'undefined';
-    const isStandalone = window.navigator.standalone === true;
-    if (isIOSSafari && !isStandalone) {
-      el('setupStep1').style.display = '';
-      el('setupStep2').style.display = 'none';
-    } else {
-      el('setupStep1').style.display = 'none';
-      el('setupStep2').style.display = '';
-      setTimeout(()=>el('nameInput').focus(), 250);
-    }
+    // PWA 起動なので iOS向けホーム追加案内（setupStep1）は不要 → 名前入力へ直行
+    el('setupStep1').style.display = 'none';
+    el('setupStep2').style.display = '';
+    setTimeout(()=>el('nameInput').focus(), 250);
   } else {
     el('myLbl').textContent = myName;
     hide('setupModal'); show('app');
