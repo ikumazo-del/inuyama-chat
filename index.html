@@ -43,6 +43,52 @@
     .card-ic    { font-size: 38px; text-align: center; margin-bottom: 5px; }
     .card-t     { font-size: 17px; font-weight: 700; color: var(--pri); text-align: center; }
     .card-st    { font-size: 12px; color: var(--sub); text-align: center; margin-bottom: 12px; }
+
+    /* ── 2026.5 ver1.2.9 起動ローディング（ごろまる・案A） ───────── */
+    #bootLoading {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+      padding-top: var(--st); padding-bottom: var(--sb);
+    }
+    .boot-normal { display: flex; flex-direction: column; align-items: center; }
+    .boot-stage {
+      position: relative; width: 200px; height: 200px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .boot-stage img {
+      width: 132px; height: 132px;
+      animation: bootBreathe 2.6s ease-in-out infinite;   /* 本体＝微かな呼吸 */
+    }
+    @keyframes bootBreathe {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.045); }
+    }
+    .sparkle {                                            /* 周囲＝きらめき */
+      position: absolute; color: #FFCA3A;
+      animation: bootTwinkle 1.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .sparkle.s1 { top: 16px;   left: 32px;  font-size: 13px; animation-delay: 0s;   }
+    .sparkle.s2 { top: 28px;   right: 24px; font-size: 18px; animation-delay: .4s;  }
+    .sparkle.s3 { bottom: 32px; left: 22px; font-size: 16px; animation-delay: .8s;  }
+    .sparkle.s4 { bottom: 20px; right: 36px; font-size: 12px; animation-delay: 1.1s; }
+    @keyframes bootTwinkle {
+      0%, 100% { opacity: .15; transform: scale(.7); }
+      50%      { opacity: 1;   transform: scale(1);  }
+    }
+    .boot-msg {
+      margin-top: 2px; text-align: center;
+      font-size: 12px; color: var(--sub); letter-spacing: .04em;
+    }
+    .boot-timeout { text-align: center; padding: 0 30px; }
+    .boot-to-ic  { font-size: 40px; margin-bottom: 10px; }
+    .boot-to-msg { font-size: 13px; color: var(--txt); line-height: 1.7; margin-bottom: 16px; }
+    .boot-reload {
+      background: var(--pri); color: #fff; border: none;
+      border-radius: 10px; padding: 10px 26px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
     .rules-box  { background: #FFF8E1; border: 1px solid #FFE082; border-radius: 10px;
                   padding: 10px 12px; margin-bottom: 12px; font-size: 12px; line-height: 1.7; }
     .rules-box b { color: #E65100; display: block; margin-bottom: 3px; }
@@ -466,6 +512,31 @@
 <div id="toast"></div>
 
 <!-- アプリ本体 -->
+<!-- 2026.5 ver1.2.9 web起動ブロック：PWA(ホーム画面/Dock)以外からの起動を案内画面で止める -->
+<div id="browserBlock" class="ov hidden">
+  <div class="card">
+    <div class="card-ic">🏥</div>
+    <div class="card-t">総合犬山中央病院 院内連絡</div>
+    <div class="card-st">パイロット運用 — スタッフ専用</div>
+    <div style="background:#E3F2FD;border-radius:10px;padding:14px 16px;margin:14px 0;text-align:left;">
+      <div style="font-size:13px;font-weight:700;color:#1565C0;margin-bottom:8px;">📱 アプリのアイコンから起動してください</div>
+      <div style="font-size:12px;color:#185FA5;line-height:1.9;">
+        このアプリはブラウザのタブからは使用できません。<br>
+        端末に追加した<b>アプリのアイコン</b>から開き直してください。
+      </div>
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:12px 14px;text-align:left;font-size:12px;color:var(--sub);line-height:1.9;">
+      <b style="color:var(--txt);">追加方法</b><br>
+      ・iPhone / iPad … 共有 <span class="key-btn" style="font-size:9px;padding:0 3px;">□↑</span> →「ホーム画面に追加」<br>
+      ・Mac Safari … 共有 <span class="key-btn" style="font-size:9px;padding:0 3px;">□↑</span> →「Dock に追加」<br>
+      ・Windows / Android … アドレスバーの<b>インストール</b>アイコン
+    </div>
+    <div style="margin-top:14px;font-size:11px;color:var(--sub);text-align:center;">
+      追加後、アイコンから開き直してください
+    </div>
+  </div>
+</div>
+
 <div id="app" class="hidden">
 
   <div class="hdr">
@@ -603,6 +674,7 @@ if (messaging) {
 // ── STATE ────────────────────────────────
 let myId   = localStorage.getItem('uid')   || '';
 let myName = localStorage.getItem('uname') || '';
+let chLoaded = false;   // 2026.5 ver1.2.9 channels のサーバ応答が一度でも届いたか（fromCacheガード用）
 let curView= 'my';
 let curCh  = null;
 let channels = [];  // [{id,name,members:{uid:name},lastMsg,...}]
@@ -677,34 +749,83 @@ const show = id => el(id).classList.remove('hidden');
 const hide = id => el(id).classList.add('hidden');
 
 // ── INIT ─────────────────────────────────
-function init() {
+// ── 2026.5 ver1.2.9 起動制御（web起動ブロック / トークン待ち / ローディング） ──
+
+// PWA（ホーム画面/Dock）からの起動かどうか。
+// localhost・file: は「端末内に閉じる」経路なので開発例外として許可（本番ドメインには穴を空けない）。
+function isPWA(){
+  const h = location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1' || location.protocol === 'file:') return true;
+  return window.navigator.standalone === true
+      || window.matchMedia('(display-mode: standalone)').matches;
+}
+
+// App Check トークンの準備を待つ（案B）。取れなくても起動は止めない＝4秒で打ち切り。
+async function waitForAppCheck(timeoutMs = 4000){
+  try {
+    await Promise.race([
+      firebase.appCheck().getToken(false),
+      new Promise(r => setTimeout(r, timeoutMs))
+    ]);
+  } catch(e) { /* 監視モード中はトークンが無くてもクエリは通る */ }
+}
+
+// 起動ローディング（案A）。8秒でサーバ応答が来なければ再読込導線へ切替。
+let bootTimer = null;
+function showBootLoading(){
+  el('bootLoading').querySelector('.boot-normal').classList.remove('hidden');
+  el('bootLoading').querySelector('.boot-timeout').classList.add('hidden');
+  show('bootLoading');
+  clearTimeout(bootTimer);
+  bootTimer = setTimeout(showBootTimeout, 8000);
+}
+function hideBootLoading(){
+  clearTimeout(bootTimer);
+  hide('bootLoading');
+}
+function showBootTimeout(){
+  if (chLoaded) return;   // 既にデータが届いていれば何もしない
+  el('bootLoading').querySelector('.boot-normal').classList.add('hidden');
+  el('bootLoading').querySelector('.boot-timeout').classList.remove('hidden');
+}
+
+async function init() {
   if ('serviceWorker' in navigator)
     navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(()=>{});
 
-  if (!myId || !myName) {
-    // iOS Safari（非PWA）の場合はステップ1を表示
-    // 2026.5.8 window.navigator.standalone はiOS Safariのみ boolean で定義される
-    // Mac/PC（Chrome等）では undefined → ステップ2へ直接スキップ
+  // ── web起動ブロック：PWA（ホーム画面/Dock）からの起動のみ許可 ──
+  if (!isPWA()) {
     const isIOSSafari = typeof window.navigator.standalone !== 'undefined';
-    const isStandalone = window.navigator.standalone === true;
-    if (isIOSSafari && !isStandalone) {
+    if (isIOSSafari) {
+      // iOS Safari：従来どおりホーム追加オンボーディング（setupStep1）
       el('setupStep1').style.display = '';
       el('setupStep2').style.display = 'none';
+      show('setupModal');
     } else {
-      el('setupStep1').style.display = 'none';
-      el('setupStep2').style.display = '';
-      setTimeout(()=>el('nameInput').focus(), 250);
+      // Mac/PC/Android のブラウザ：専用ブロック画面
+      hide('setupModal');
+      show('browserBlock');
     }
+    return;
+  }
+
+  // ── ここから先は PWA 起動が確定 ──
+  if (!myId || !myName) {
+    el('setupStep1').style.display = 'none';
+    el('setupStep2').style.display = '';
+    setTimeout(()=>el('nameInput').focus(), 250);
   } else {
     el('myLbl').textContent = myName;
     hide('setupModal'); show('app');
+    showBootLoading();        // 案A：ごろまるローディングを先に出す
+    await waitForAppCheck();  // 案B：App Check トークン準備を待つ
     startAll();
     updateBellBtn();
   }
 }
 
 // ── SETUP ────────────────────────────────
-function doSetup() {
+async function doSetup() {
   initAudio();
   const n = el('nameInput').value.trim();
   if (!n) { toast('名前を入力してください'); return; }
@@ -719,6 +840,8 @@ function doSetup() {
   upsertUser();
   el('myLbl').textContent = myName;
   hide('setupModal'); show('app');
+  showBootLoading();        // 2026.5 ver1.2.9 案A
+  await waitForAppCheck();  // 2026.5 ver1.2.9 案B
   startAll();
 }
 
@@ -878,7 +1001,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.8';
+  el('hdrT').textContent = '院内連絡ツール ver1.2.9';
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -957,6 +1080,10 @@ async function startAll() {
   }).catch(() => updateBellBtn());
   unsubCh = db.collection('channels').orderBy('createdAt','asc')
     .onSnapshot(snap=>{
+      // 2026.5 ver1.2.9 起動直後のキャッシュ初回応答（空・未確定）はローディング据え置き
+      if (snap.metadata.fromCache && snap.empty && !chLoaded) return;
+      chLoaded = true;
+      hideBootLoading();
       channels = snap.docs.map(d=>({id:d.id, members:{}, ...d.data()}));
       // 2026.5.18 ver1.2.7.1 自分が変更したチャンネル名は自動で既読化（自分には★を出さない）
       let changed = false;
@@ -1923,7 +2050,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.8',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver1.2.9',all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
@@ -2607,5 +2734,24 @@ document.addEventListener('click', function _initClick() {
 
 init();
 </script>
+
+<!-- 2026.5 ver1.2.9 起動ローディング（ごろまる・案A）：未確定状態を引き受ける -->
+<div id="bootLoading" class="hidden">
+  <div class="boot-normal">
+    <div class="boot-stage">
+      <img src="./icon-512.png" alt="">
+      <span class="sparkle s1">✦</span>
+      <span class="sparkle s2">✦</span>
+      <span class="sparkle s3">✦</span>
+      <span class="sparkle s4">✦</span>
+    </div>
+    <div class="boot-msg">接続中…</div>
+  </div>
+  <div class="boot-timeout hidden">
+    <div class="boot-to-ic">📡</div>
+    <div class="boot-to-msg">うまく接続できていないようです。<br>通信環境をご確認のうえ、再読込してください。</div>
+    <button class="boot-reload" onclick="location.reload()">再読込</button>
+  </div>
+</div>
 </body>
 </html>
