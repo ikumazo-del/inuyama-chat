@@ -331,8 +331,10 @@
       background: var(--bg);
       padding-top: var(--st); padding-bottom: var(--sb);
     }
+    /* ── 2026.5 ver1.2.13 起動メッセージを医療安全キーフレーズ（3行）に差し替え ── */
     #loading .load-msg {
-      font-size: 15px; color: var(--sub); letter-spacing: .04em;
+      text-align: center; padding: 0 16px;
+      font-size: 13px; color: var(--sub); line-height: 2.3; letter-spacing: .02em;
     }
   </style>
 </head>
@@ -506,9 +508,17 @@
 
 <!-- 2026.5 ver1.2.12 起動ローディング：DOMは init() 呼び出しより前に置く。
      最初から表示状態。startAll() のチャンネル初回受信、または init() の
-     ブラウザ起動／新規登録ルートで hide される。 -->
+     ブラウザ起動／新規登録ルートで hide される。
+     2026.5 ver1.2.13 表示内容を「Now loading…」から医療安全キーフレーズに差し替え。
+     最低3秒表示は hideLoading() 側で担保（hide のタイミングを遅らせるのみ）。 -->
 <div id="loading">
-  <div class="load-msg">Now loading…</div>
+  <!-- ver1.2.12 までは <div class="load-msg">Now loading…</div> だった。
+       ver1.2.13 で医療安全キーフレーズに差し替え。動かないコードの地層として残置。 -->
+  <div class="load-msg">
+    <div>要配慮個人情報は、診察室から出してはいけない尊厳です。</div>
+    <div>患者名や病名の共有は極力避けていただき、</div>
+    <div>もしチャットに流した際は速やかに削除願います🙏</div>
+  </div>
 </div>
 
 <div id="app" class="hidden">
@@ -609,7 +619,15 @@
 //  APP_VER ── アプリのバージョン（ここだけ書き換えれば全表示が連動）
 //  画面の表題に出る "院内連絡ツール ver●●●" はすべてこの値を参照する。
 // ═══════════════════════════════════════════════════════════
-const APP_VER = '1.2.12';
+const APP_VER = '1.2.13';
+
+// ═══════════════════════════════════════════════════════════
+//  bootTime ── 2026.5 ver1.2.13 起動ローディング最低表示時間の基準
+//  起動ローディング（医療安全キーフレーズ）を最低3秒は表示するための基準時刻。
+//  スクリプト読込時点を記録する。実際の表示開始（#loading の HTMLパース）は
+//  これより少し早いので、体感の表示時間は常に3秒以上になる（短くはならない）。
+// ═══════════════════════════════════════════════════════════
+const bootTime = Date.now();
 
 firebase.initializeApp({
   apiKey:"AIzaSyAUVZoqxo-Qmsf6wKNT4eEM14ONvqRVz7I",
@@ -726,6 +744,20 @@ async function deleteAccount() {
 const el   = id => document.getElementById(id);
 const show = id => el(id).classList.remove('hidden');
 const hide = id => el(id).classList.add('hidden');
+
+// ── 2026.5 ver1.2.13 起動ローディングの最低表示時間ロジック ──────────
+//  hide('loading') の代わりに呼ぶ。起動からの経過が3秒未満なら、3秒経過まで
+//  待ってから消す。3秒以上経っていれば即座に消す。起動ロジック（init /
+//  startAll / onSnapshot）の流れには手を入れず、「消すタイミングを遅らせる
+//  だけ」の引き算実装。チャンネル初回受信（onSnapshot）からの呼び出しに適用。
+function hideLoading() {
+  const elapsed = Date.now() - bootTime;
+  if (elapsed >= 3000) {
+    hide('loading');
+  } else {
+    setTimeout(() => hide('loading'), 3000 - elapsed);
+  }
+}
 
 // ── INIT ─────────────────────────────────
 // ── 2026.5 ver1.2.11 web起動ブロック（③のみ上乗せ。①トークン待ち・②ローディングは載せない）──
@@ -1034,7 +1066,7 @@ async function startAll() {
       });
       if (changed) localStorage.setItem('lastSeenRenamed', JSON.stringify(lastSeenRenamed));
       renderMy(); renderAll(); renderStaff();
-      hide('loading');          // 2026.5 ver1.2.12 チャンネル初回受信で起動ローディング解除
+      hideLoading();            // 2026.5 ver1.2.13 最低3秒表示を担保して起動ローディング解除
       updateHdrStats(); // 2026.5.10
       scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
       if (curCh) {
