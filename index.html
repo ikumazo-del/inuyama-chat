@@ -585,6 +585,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script><!-- 2026.5.19 ver1.2.8 追加 -->
 
 <script>
+// ═══════════════════════════════════════════════════════════
+//  APP_VER ── アプリのバージョン（ここだけ書き換えれば全表示が連動）
+//  画面の表題に出る "院内連絡ツール ver●●●" はすべてこの値を参照する。
+// ═══════════════════════════════════════════════════════════
+const APP_VER = '1.2.11';
+
 firebase.initializeApp({
   apiKey:"AIzaSyAUVZoqxo-Qmsf6wKNT4eEM14ONvqRVz7I",
   authDomain:"inuyama-chat.firebaseapp.com",
@@ -912,7 +918,7 @@ function incrementStats() {
 function updateHdrStats() {
   if (curCh || curDM || curBulletin) return; // チャット中は更新しない
   const pct = (Math.floor(totalMessages / MSG_LIMIT * 1000) / 10).toFixed(1);
-  el('hdrT').textContent = '院内連絡ツール ver1.2.8';
+  el('hdrT').textContent = '院内連絡ツール ver' + APP_VER;
   el('hdrS').innerHTML =
     `💬${channels.length} 👥${users.filter(u=>!u.isBot).length} ☁️${pct}% ／ ` +
     `<span style="cursor:pointer;text-decoration:underline dotted;" onclick="openIwaoKDM()">@IwaoK</span> 🚧`;
@@ -1957,7 +1963,7 @@ function nav(v) {
   el('niBb').classList.remove('on');
   const map={my:'My',all:'All',staff:'Staff'};
   el('v'+map[v]).classList.add('on'); el('ni'+map[v]).classList.add('on');
-  const titles={my:'院内連絡ツール ver1.2.8',all:'チャンネル',staff:'スタッフ一覧'};
+  const titles={my:'院内連絡ツール ver' + APP_VER,all:'チャンネル',staff:'スタッフ一覧'};
   el('hdrT').textContent=titles[v]; el('hdrS').textContent='';
   if (v==='my') updateHdrStats(); // 2026.5.10 統計付きヘッダー
   el('hdrAct').innerHTML=`<button class="hbtn" onclick="promptName()">👤 <span id="myLbl">${esc(myName)}</span></button><button class="hbtn" id="bellBtn" onclick="requestNotify()">🔕</button>`;
