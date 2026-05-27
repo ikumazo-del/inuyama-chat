@@ -321,6 +321,19 @@
     }
 
     .hidden { display: none !important; }
+    /* ── 2026.5 ver1.2.12 起動ローディング ──────────────────────────
+       HTMLパースの瞬間から表示される（class="hidden"を付けない）。
+       startAll() のチャンネル初回受信で hide。
+       JSが1行も動かなくても出る＝起動でコケても白画面にはならない設計。 */
+    #loading {
+      position: fixed; inset: 0; z-index: 10000;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+      padding-top: var(--st); padding-bottom: var(--sb);
+    }
+    #loading .load-msg {
+      font-size: 15px; color: var(--sub); letter-spacing: .04em;
+    }
   </style>
 </head>
 <body>
@@ -491,6 +504,13 @@
   </div>
 </div>
 
+<!-- 2026.5 ver1.2.12 起動ローディング：DOMは init() 呼び出しより前に置く。
+     最初から表示状態。startAll() のチャンネル初回受信、または init() の
+     ブラウザ起動／新規登録ルートで hide される。 -->
+<div id="loading">
+  <div class="load-msg">Now loading…</div>
+</div>
+
 <div id="app" class="hidden">
 
   <div class="hdr">
@@ -589,7 +609,7 @@
 //  APP_VER ── アプリのバージョン（ここだけ書き換えれば全表示が連動）
 //  画面の表題に出る "院内連絡ツール ver●●●" はすべてこの値を参照する。
 // ═══════════════════════════════════════════════════════════
-const APP_VER = '1.2.11';
+const APP_VER = '1.2.12';
 
 firebase.initializeApp({
   apiKey:"AIzaSyAUVZoqxo-Qmsf6wKNT4eEM14ONvqRVz7I",
@@ -726,6 +746,7 @@ function init() {
   if (!isPWA()) {
     hide('setupModal');
     show('browserBlock');
+    hide('loading');          // 2026.5 ver1.2.12 案内画面を前面に出す
     return;
   }
 
@@ -734,6 +755,7 @@ function init() {
     // PWA 起動なので iOS向けホーム追加案内（setupStep1）は不要 → 名前入力へ直行
     el('setupStep1').style.display = 'none';
     el('setupStep2').style.display = '';
+    hide('loading');          // 2026.5 ver1.2.12 名前入力画面を前面に出す
     setTimeout(()=>el('nameInput').focus(), 250);
   } else {
     el('myLbl').textContent = myName;
@@ -759,6 +781,7 @@ function doSetup() {
   upsertUser();
   el('myLbl').textContent = myName;
   hide('setupModal'); show('app');
+  show('loading');          // 2026.5 ver1.2.12 登録直後もチャンネル受信まで Now loading
   startAll();
 }
 
@@ -1011,6 +1034,7 @@ async function startAll() {
       });
       if (changed) localStorage.setItem('lastSeenRenamed', JSON.stringify(lastSeenRenamed));
       renderMy(); renderAll(); renderStaff();
+      hide('loading');          // 2026.5 ver1.2.12 チャンネル初回受信で起動ローディング解除
       updateHdrStats(); // 2026.5.10
       scheduleBadgeUpdate(); // 2026.5.14 アプリバッジ更新
       if (curCh) {
