@@ -619,7 +619,7 @@
 //  APP_VER ── アプリのバージョン（ここだけ書き換えれば全表示が連動）
 //  画面の表題に出る "院内連絡ツール ver●●●" はすべてこの値を参照する。
 // ═══════════════════════════════════════════════════════════
-const APP_VER = '1.2.13';
+const APP_VER = '1.2.14';
 
 // ═══════════════════════════════════════════════════════════
 //  bootTime ── 2026.5 ver1.2.13 起動ローディング最低表示時間の基準
@@ -1877,15 +1877,24 @@ function showDeleteMenu(bubbleEl, docRef) {
   cancelBtn.textContent = 'キャンセル';
   cancelBtn.style.cssText = btnStyle('#F1F5F9', '#6B7280').replace('font-weight:700;','');
   cancelBtn.onclick = () => menu.remove();
-  const delBtn = document.createElement('button');
-  delBtn.textContent = '🗑️ 削除する';
-  delBtn.style.cssText = btnStyle('#EF4444', 'white');
-  delBtn.onclick = async () => {
-    menu.remove();
-    try { await docRef.delete(); toast('🗑️ 削除しました'); }
-    catch(e) { toast('⚠️ 削除に失敗しました'); }
-  };
-  box.appendChild(cancelBtn); box.appendChild(delBtn);
+  // 2026.5.28 ver1.2.14 掲示板の削除権限制御
+  // 掲示板：投稿者本人 or 🔑管理者のみ削除可（マニュアル類の誤削除防止）
+  // DM/チャンネル：従来通り全員が削除可（電話代わりのチャット思想）
+  const isMyMsg = bubbleEl.classList.contains('me');
+  const canDelete = !curBulletin || isMyMsg || isAdmin;
+
+  box.appendChild(cancelBtn);
+  if (canDelete) {
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '🗑️ 削除する';
+    delBtn.style.cssText = btnStyle('#EF4444', 'white');
+    delBtn.onclick = async () => {
+      menu.remove();
+      try { await docRef.delete(); toast('🗑️ 削除しました'); }
+      catch(e) { toast('⚠️ 削除に失敗しました'); }
+    };
+    box.appendChild(delBtn);
+  }
   menu.appendChild(box);
   menu.addEventListener('click', e=>{ if(e.target===menu) menu.remove(); });
   document.body.appendChild(menu);
