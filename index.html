@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- 2026.6.21 ver1.2.15 maximum-scale/user-scalable=no 追加：ピンチズームでヘッダー・入力欄が画面外へ飛ぶ問題の対策。画像拡大はタップ式ビューアが別途担う(LINE型) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="院内連絡">
@@ -29,6 +30,7 @@
       --sb: env(safe-area-inset-bottom, 0px);
     }
     html, body { height: 100%; overflow: hidden; background: var(--bg);
+      touch-action: manipulation; /* 2026.6.21 ver1.2.15 ダブルタップズーム封じ */
       color: var(--txt); font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; }
 
     /* ── OVERLAYS ───────────────────────── */
@@ -619,7 +621,14 @@
 //  APP_VER ── アプリのバージョン（ここだけ書き換えれば全表示が連動）
 //  画面の表題に出る "院内連絡ツール ver●●●" はすべてこの値を参照する。
 // ═══════════════════════════════════════════════════════════
-const APP_VER = '1.2.14';
+const APP_VER = '1.2.15';
+
+// ── 2026.6.21 ver1.2.15 ピンチズーム無効化 ──────────────────
+//  user-scalable=no を iOS が無視する場合への決定打。
+//  2本指ジェスチャ(gesture*)のみ止める。タップ式の画像拡大ビューアは別レイヤーなので無傷。
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev => {
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+});
 
 // ═══════════════════════════════════════════════════════════
 //  bootTime ── 2026.5 ver1.2.13 起動ローディング最低表示時間の基準
